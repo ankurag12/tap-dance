@@ -1,0 +1,31 @@
+# vcstool manifest — external SOURCE dependencies for the Isaac ROS workspace.
+#
+# These repos are cloned as *siblings* of this one under the workspace `src/`.
+# They are intentionally NOT committed into this repo; this file pins their
+# versions so the environment can be rebuilt on a fresh board.
+#
+# Usage (from the workspace root, e.g. ~/workspaces/isaac_ros-dev):
+#   vcs import src < src/playground/isaac_ros.repos
+#   # then, inside the dev container, resolve binary deps + build:
+#   rosdep install --from-paths src --ignore-src -y
+#   colcon build --symlink-install
+#
+# NOTE on reproducibility: `release-3.2` is a release *branch*, not a fixed tag,
+# so it can still move. For a truly frozen environment, replace `version:` with
+# the exact commit hash you validated against.
+repositories:
+  isaac_ros_common:
+    type: git
+    url: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common.git
+    version: release-3.2
+  isaac_ros_apriltag:
+    type: git
+    url: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_apriltag.git
+    version: release-3.2
+  realsense-ros:
+    type: git
+    url: https://github.com/IntelRealSense/realsense-ros.git
+    # TODO: pin to the realsense-ros tag whose librealsense matches the version
+    # baked into the Isaac ROS container. We'll confirm the container's
+    # librealsense version on the board (`rs-enumerate-devices`) and pin here.
+    version: ros2-development

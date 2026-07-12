@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>jetson_bringup</name>
+  <version>0.0.0</version>
+  <description>Launch files and configs that bring up Isaac ROS experiments on the Jetson Orin Nano (RealSense D456, AprilTag, Visual SLAM).</description>
+  <maintainer email="ankur.ag12@gmail.com">hunter</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- Runtime deps: the packages whose nodes our launch files start.
+       These are what `rosdep` / the workspace must provide at run time. -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>isaac_ros_apriltag</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
