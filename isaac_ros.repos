@@ -13,6 +13,13 @@
 # NOTE on reproducibility: `release-3.2` is a release *branch*, not a fixed tag,
 # so it can still move. For a truly frozen environment, replace `version:` with
 # the exact commit hash you validated against.
+# NOTE: realsense-ros is intentionally NOT listed here. The Isaac ROS container's
+# `realsense` image layer (Dockerfile.realsense, enabled via the ros2_humble.realsense
+# image key) already builds and installs a matched pair into the image:
+#   - librealsense    v2.55.1        (built from source)
+#   - realsense2_camera release/4.51.1-isaac  (ROS wrapper, built against that librealsense)
+# Cloning realsense-ros into the workspace would pull a newer version that expects a
+# newer librealsense than 2.55.1, causing a mismatch. Use the baked-in one instead.
 repositories:
   isaac_ros_common:
     type: git
@@ -22,10 +29,3 @@ repositories:
     type: git
     url: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_apriltag.git
     version: release-3.2
-  realsense-ros:
-    type: git
-    url: https://github.com/IntelRealSense/realsense-ros.git
-    # TODO: pin to the realsense-ros tag whose librealsense matches the version
-    # baked into the Isaac ROS container. We'll confirm the container's
-    # librealsense version on the board (`rs-enumerate-devices`) and pin here.
-    version: ros2-development
