@@ -13,7 +13,9 @@
        These are what `rosdep` / the workspace must provide at run time. -->
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>isaac_ros_image_proc</exec_depend>
   <exec_depend>isaac_ros_apriltag</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
