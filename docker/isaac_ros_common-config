@@ -1,0 +1,19 @@
+# Per-machine "remembered defaults" for Isaac ROS run_dev.sh.
+# (run_dev.sh is a convenience wrapper: it builds the image via
+# build_image_layers.sh AND runs/execs the container. Rather than pass args on
+# every bare `./run_dev.sh`, it sources this file for sticky settings.)
+#
+# Versioned here in the repo; symlink it into the path run_dev.sh reads:
+#   ln -sf ~/workspaces/isaac_ros-dev/src/playground/docker/isaac_ros_common-config \
+#          ~/.isaac_ros_common-config
+#
+# The absolute path below is machine-specific (user 'hunter'); adjust if cloned
+# elsewhere. That machine-locality is why run_dev.sh keeps it in $HOME.
+
+# Build the realsense layer AND our custom 'user' layer (Dockerfile.user).
+# Equivalent to passing --image_key aarch64.ros2_humble.realsense.user to the builder.
+CONFIG_IMAGE_KEY=ros2_humble.realsense.user
+
+# Where build_image_layers.sh looks for Dockerfile.user (this repo's docker/).
+# Absolute path -> used as-is; searched before the default isaac_ros_common/docker.
+CONFIG_DOCKER_SEARCH_DIRS=(/home/hunter/workspaces/isaac_ros-dev/src/playground/docker)

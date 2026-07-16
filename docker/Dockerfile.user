@@ -1,0 +1,19 @@
+# Custom Isaac ROS image layer — bakes in the extra ROS packages we'd otherwise
+# `apt install` by hand, so they survive container recreation.
+# (run_dev.sh creates the container with `docker run --rm`, which deletes it —
+# and any interactive installs — when it fully stops or the board reboots.)
+#
+# Enabled via ~/.isaac_ros_common-config (see isaac_ros_common-config in this dir):
+#   CONFIG_IMAGE_KEY=ros2_humble.realsense.user
+#   CONFIG_DOCKER_SEARCH_DIRS=(<abs path to this docker/ dir>)
+#
+# build_image_layers.sh passes BASE_IMAGE = the previously-built layer
+# (…​.realsense); this layer adds our apt packages on top of it.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-isaac-ros-image-proc \
+        ros-humble-isaac-ros-visual-slam \
+        ros-humble-foxglove-bridge \
+    && rm -rf /var/lib/apt/lists/*
