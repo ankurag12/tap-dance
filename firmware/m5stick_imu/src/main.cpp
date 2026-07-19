@@ -27,7 +27,9 @@ rcl_timer_t timer;
 // micro-ROS convention: on a hard rcl failure, halt (a real firmware would
 // reset/reconnect). RCSOFTCHECK ignores recoverable errors (e.g. a dropped publish).
 #define RCCHECK(fn)     { if ((fn) != RCL_RET_OK) { errorLoop(); } }
-#define RCSOFTCHECK(fn) { (void)(fn); }
+// Assign the result so GCC's warn_unused_result on rcl_publish is satisfied
+// (a bare (void) cast doesn't suppress it).
+#define RCSOFTCHECK(fn) { rcl_ret_t rc_ = (fn); (void) rc_; }
 
 void errorLoop() {
   while (true) { delay(200); }
@@ -45,7 +47,10 @@ void setup() {
   Serial.begin(115200);
 
   // Configure the WiFi/UDP transport to the agent (creds/IP from secrets.h).
-  set_microros_wifi_transports(WIFI_SSID, WIFI_PASS, AGENT_IP, AGENT_PORT);
+  // The transport wants an IPAddress, so parse the dotted-decimal string.
+  IPAddress agent_ip;
+  agent_ip.fromString(AGENT_IP);
+  set_microros_wifi_transports((char*) WIFI_SSID, (char*) WIFI_PASS, agent_ip, AGENT_PORT);
   delay(2000);  // give WiFi a moment to associate
 
   allocator = rcl_get_default_allocator();
