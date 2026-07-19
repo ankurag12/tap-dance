@@ -16,4 +16,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-isaac-ros-image-proc \
         ros-humble-isaac-ros-visual-slam \
         ros-humble-foxglove-bridge \
+        ros-humble-robot-localization \
     && rm -rf /var/lib/apt/lists/*
