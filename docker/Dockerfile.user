@@ -19,3 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-robot-localization \
         ros-humble-diagnostic-updater \
     && rm -rf /var/lib/apt/lists/*
+
+# Auto-source the workspace overlay in every new shell (a fresh container shell
+# only sources the underlay). The guard makes it a no-op before the workspace is
+# first built. Baked here because the container is --rm, so a live .bashrc edit
+# would vanish on rebuild.
+RUN echo '[ -f /workspaces/isaac_ros-dev/install/setup.bash ] && source /workspaces/isaac_ros-dev/install/setup.bash' \
+    >> /home/admin/.bashrc
+
