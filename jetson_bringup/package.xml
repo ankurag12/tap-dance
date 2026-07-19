@@ -18,6 +18,7 @@
   <exec_depend>isaac_ros_image_proc</exec_depend>
   <exec_depend>isaac_ros_apriltag</exec_depend>
   <exec_depend>isaac_ros_visual_slam</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
