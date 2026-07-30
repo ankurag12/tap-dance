@@ -29,6 +29,7 @@ setup(
     entry_points={
         'console_scripts': [
             'sensor_monitor = jetson_bringup.sensor_monitor:main',
+            'detection_probe = jetson_bringup.detection_probe:main',
         ],
     },
 )
