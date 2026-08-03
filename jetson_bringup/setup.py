@@ -30,6 +30,7 @@ setup(
         'console_scripts': [
             'sensor_monitor = jetson_bringup.sensor_monitor:main',
             'detection_probe = jetson_bringup.detection_probe:main',
+            'tag_pose_stats = jetson_bringup.tag_pose_stats:main',
         ],
     },
 )
