@@ -60,6 +60,25 @@ G = 9.80665
 # Full-scale limits (m/s^2) for the MPU6886's selectable ranges. A per-axis
 # reading parked on one of these means the sensor is saturating.
 CLIP_LEVELS = {'+/-2g': 2 * G, '+/-4g': 4 * G, '+/-8g': 8 * G, '+/-16g': 16 * G}
+CLIP_TOL = 0.02        # within 2% of full scale counts as "at the rail"
+
+
+def infer_range(session_max_abs):
+    """
+    Guess the configured full-scale range, and whether it is saturating.
+
+    A real clip PINS readings at the rail and never exceeds it, so a limit is
+    only plausible if the data never went past it -- the smallest such limit is
+    the configured range. Testing "is any reading near a limit?" instead gives
+    false positives, because a transient passing through 19.8 m/s^2 sits near
+    the +/-2g rail even when much larger readings exist elsewhere.
+    """
+    plausible = [(lim, name) for name, lim in CLIP_LEVELS.items()
+                 if session_max_abs <= lim * (1.0 + CLIP_TOL)]
+    if not plausible:
+        return None, False
+    lim, name = min(plausible)
+    return name, session_max_abs >= lim * (1.0 - CLIP_TOL)
 
 
 def stamp_to_sec(stamp):
@@ -91,6 +110,10 @@ class TapDetector(Node):
         self._pub = self.create_publisher(Header, '/wand/tap', 10)
 
         self._reset()
+        # Range inference needs the largest magnitude ever seen, not just this
+        # window's: a quiet window would otherwise "prove" a tiny range.
+        self._session_max = 0.0
+        self._pinned = 0
         # Excursion state persists across windows so one straddling the boundary
         # is not split into two.
         self._active = False
@@ -127,6 +150,12 @@ class TapDetector(Node):
         for i, v in enumerate(axes):
             self._axis_min[i] = min(self._axis_min[i], v)
             self._axis_max[i] = max(self._axis_max[i], v)
+        peak_axis = max(abs(v) for v in axes)
+        self._session_max = max(self._session_max, peak_axis)
+        # Count samples sitting at the rail: a few is noise, many is saturation.
+        name, _ = infer_range(self._session_max)
+        if name is not None and peak_axis >= CLIP_LEVELS[name] * (1.0 - CLIP_TOL):
+            self._pinned += 1
 
         # --- excursion tracking: how long does the signal stay elevated? ---
         if dev >= self._floor:
@@ -173,13 +202,13 @@ class TapDetector(Node):
                        for i in range(3))
         lines.append(f'  per-axis min/max (x y z):  {ax}')
 
-        clipped = [
-            name for name, lim in CLIP_LEVELS.items()
-            if any(abs(abs(v) - lim) < 0.02 * lim
-                   for v in self._axis_min + self._axis_max if math.isfinite(v))]
-        if clipped:
-            lines.append(f'  *** SATURATING at {clipped[0]} — raise the accel range, '
-                         'or every hard tap reads the same value ***')
+        rng_name, saturating = infer_range(self._session_max)
+        lines.append(f'  session max |axis| {self._session_max:6.1f}   '
+                     f'inferred range {rng_name or "above +/-16g?"}')
+        if saturating:
+            lines.append(
+                f'  *** SATURATING at {rng_name} ({self._pinned} samples at the rail) '
+                '— raise the accel range, or hard taps all read the same ***')
 
         if self._excursions:
             lines.append(f'  excursions above {self._floor:.0f}:'
