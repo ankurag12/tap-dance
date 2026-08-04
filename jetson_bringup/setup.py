@@ -33,6 +33,7 @@ setup(
             'tag_pose_stats = jetson_bringup.tag_pose_stats:main',
             'object_locator = jetson_bringup.object_locator:main',
             'wand_pointer = jetson_bringup.wand_pointer:main',
+            'tap_detector = jetson_bringup.tap_detector:main',
         ],
     },
 )
