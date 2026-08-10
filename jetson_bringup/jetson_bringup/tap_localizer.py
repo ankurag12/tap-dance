@@ -66,8 +66,15 @@ class TapLocalizer(Node):
         self._max_wait = self.declare_parameter('max_wait', 0.30).value
         # If the two bracketing detections are further apart than this, the tag
         # was effectively missing over the tap -- interpolating across it would
-        # invent a position.
+        # invent a position, so fall back to the last good pose instead.
         self._max_gap = self.declare_parameter('max_gap', 0.12).value
+        # Fallback: how stale the last detection BEFORE the tap may be and still
+        # be usable. Justified by geometry, not convenience -- a vertical tap
+        # changes the tag's v but preserves its u, and association keys on u. So
+        # a detection from shortly before contact carries the horizontal position
+        # we need, and demanding a detection AFTER the tap discards good data.
+        # The reported horizontal velocity is what validates the substitution.
+        self._max_stale = self.declare_parameter('max_stale', 0.25).value
 
         # 30 Hz * buffer_seconds, with headroom.
         self._poses = deque(maxlen=int(60 * buffer_seconds))
@@ -90,10 +97,13 @@ class TapLocalizer(Node):
 
         self._n_taps = 0
         self._n_located = 0
+        self._n_interp = 0
+        self._n_last = 0
         self._n_det_msgs = 0
+        self._n_wand_dets = 0
         self._ids_seen = set()
-        self.create_timer(
-            self.declare_parameter('status_period', 5.0).value, self._status)
+        self._status_period = self.declare_parameter('status_period', 5.0).value
+        self.create_timer(self._status_period, self._status)
         self.get_logger().info(
             f'wand tag id {self._wand_id if self._wand_id >= 0 else "(any)"}; '
             f'buffering {buffer_seconds:.1f} s of detections, holding taps up to '
@@ -108,6 +118,7 @@ class TapLocalizer(Node):
             if self._wand_id >= 0 and det.id != self._wand_id:
                 continue
             self._ids_seen.add(det.id)
+            self._n_wand_dets += 1
             # center is already in PIXEL coordinates -- no intrinsics, no depth,
             # no deprojection needed for horizontal association.
             self._poses.append(
@@ -123,16 +134,25 @@ class TapLocalizer(Node):
         """
         if self._poses:
             age = self.get_clock().now().nanoseconds * 1e-9 - self._poses[-1][0]
+            msg_hz = self._n_det_msgs / self._status_period
+            wand_hz = self._n_wand_dets / self._status_period
+            # msg_hz is the camera pipeline's rate; wand_hz is how often the tag
+            # is actually FOUND. A big gap between them means the tag is being
+            # missed -- too small, too oblique, or motion-blurred -- which is the
+            # real limit on how well any tap can be localized.
             self.get_logger().info(
-                f'inputs: {len(self._poses)} poses buffered '
-                f'(newest {age * 1000:.0f} ms old), tag ids seen '
-                f'{sorted(self._ids_seen)}, {self._n_taps} taps, '
-                f'{self._n_located} located')
+                f'inputs: detections {msg_hz:.0f} Hz, wand tag found '
+                f'{wand_hz:.0f} Hz ({100.0 * wand_hz / msg_hz if msg_hz else 0:.0f}% '
+                f'of frames), newest {age * 1000:.0f} ms old, ids {sorted(self._ids_seen)}'
+                f'  |  taps {self._n_taps}, located {self._n_located} '
+                f'({self._n_interp} interp, {self._n_last} last-pose)')
         else:
             self.get_logger().warn(
                 f'inputs: NO poses buffered after {self._n_det_msgs} detection '
                 'messages — wrong wand_tag_id, or /tag_detections not flowing. '
                 'Check `ros2 topic echo /tag_detections --once` for the real id.')
+        self._n_det_msgs = 0
+        self._n_wand_dets = 0
 
     def _on_tap(self, msg):
         self._n_taps += 1
@@ -158,43 +178,56 @@ class TapLocalizer(Node):
         for tap_t, first_seen in self._pending:
             before, after = self._bracket(tap_t)
 
-            if before is not None and after is not None:
-                self._report(tap_t, before, after)
+            # Best case: detections on both sides, close enough to interpolate.
+            if before is not None and after is not None \
+                    and (after[0] - before[0]) <= self._max_gap:
+                self._report_interp(tap_t, before, after)
                 continue
 
-            # No later detection yet: the tap may simply have outrun the camera.
+            # Keep waiting -- a later detection may still arrive and allow
+            # interpolation, which beats the fallback.
             if now - first_seen < self._max_wait:
                 still_pending.append((tap_t, first_seen))
                 continue
 
-            # Waited long enough. Either the tag was not visible, or the tap
-            # predates everything we still hold.
+            # Fallback: last detection before the tap. Valid because a vertical
+            # tap preserves u; see max_stale.
+            if before is not None and (tap_t - before[0]) <= self._max_stale:
+                self._report_last(tap_t, before)
+                continue
+
             if before is None and self._poses and tap_t < self._poses[0][0]:
                 self.get_logger().warn(
                     f'TAP @ {tap_t:.3f} — older than the buffer; raise '
                     'buffer_seconds')
-            else:
-                gap = (f'{(tap_t - before[0]) * 1000:.0f} ms after the last '
-                       'detection') if before else 'no detections at all'
+            elif before is not None:
                 self.get_logger().warn(
-                    f'TAP @ {tap_t:.3f} — NO TAG at the tap instant ({gap}). '
-                    'Tag occluded, blurred, or out of frame during contact.')
+                    f'TAP @ {tap_t:.3f} — last detection was '
+                    f'{(tap_t - before[0]) * 1000:.0f} ms before the tap '
+                    f'(> max_stale {self._max_stale * 1000:.0f} ms); tag lost '
+                    'too long before contact')
+            else:
+                self.get_logger().warn(
+                    f'TAP @ {tap_t:.3f} — NO TAG at all near the tap instant.')
 
         self._pending = still_pending
 
-    def _report(self, tap_t, before, after):
+    def _h_speed(self, sample):
+        """Horizontal pixel speed just before `sample`, to sanity-check the
+        'u is unchanged' assumption the fallback relies on."""
+        prev = None
+        for s in self._poses:
+            if s[0] >= sample[0]:
+                break
+            prev = s
+        if prev is None or sample[0] == prev[0]:
+            return None
+        return abs(sample[1] - prev[1]) / (sample[0] - prev[0])   # px/s
+
+    def _report_interp(self, tap_t, before, after):
         t0, u0, v0 = before
         t1, u1, v1 = after
         dt = t1 - t0
-
-        if dt > self._max_gap:
-            self.get_logger().warn(
-                f'TAP @ {tap_t:.3f} — bracketing detections {dt * 1000:.0f} ms '
-                f'apart (> max_gap {self._max_gap * 1000:.0f} ms); the tag was '
-                'missing over the tap, not interpolating')
-            return
-
-        # Linear interpolation between the straddling detections.
         alpha = (tap_t - t0) / dt if dt > 0 else 0.0
         u = u0 + alpha * (u1 - u0)
         v = v0 + alpha * (v1 - v0)
@@ -207,12 +240,32 @@ class TapLocalizer(Node):
         snap_err = ((u - nearest[1]) ** 2 + (v - nearest[2]) ** 2) ** 0.5
 
         self._n_located += 1
+        self._n_interp += 1
         self.get_logger().info(
-            f'TAP @ {tap_t:.3f} -> u={u:7.1f}  v={v:7.1f}   '
+            f'TAP @ {tap_t:.3f} -> u={u:7.1f}  v={v:7.1f}  [interp]  '
             f'(bracket {dt * 1000:4.1f} ms, alpha {alpha:.2f}, '
-            f'tag moved {travel:5.1f} px, snapping would cost {snap_err:4.1f} px)'
+            f'moved {travel:5.1f} px, snapping would cost {snap_err:4.1f} px)'
             f'   [{self._n_located}/{self._n_taps} located]')
+        self._publish(tap_t, u, v)
 
+    def _report_last(self, tap_t, before):
+        t0, u0, v0 = before
+        age_ms = (tap_t - t0) * 1000.0
+        speed = self._h_speed(before)
+        # Horizontal drift over the staleness window is the error this fallback
+        # actually incurs -- if the wand was hovering, it is near zero.
+        drift = f'{speed * (tap_t - t0):.1f} px' if speed is not None else 'n/a'
+
+        self._n_located += 1
+        self._n_last += 1
+        self.get_logger().info(
+            f'TAP @ {tap_t:.3f} -> u={u0:7.1f}  v={v0:7.1f}  [last]    '
+            f'(pose {age_ms:5.1f} ms old, horiz speed '
+            f'{"n/a" if speed is None else f"{speed:6.0f} px/s"}, '
+            f'implied u drift {drift})   [{self._n_located}/{self._n_taps} located]')
+        self._publish(tap_t, u0, v0)
+
+    def _publish(self, tap_t, u, v):
         out = PointStamped()
         out.header.stamp.sec = int(tap_t)
         out.header.stamp.nanosec = int((tap_t % 1.0) * 1e9)
