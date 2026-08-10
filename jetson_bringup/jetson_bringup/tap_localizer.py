@@ -58,7 +58,7 @@ class TapLocalizer(Node):
     def __init__(self):
         super().__init__('tap_localizer')
 
-        self._wand_id = self.declare_parameter('wand_tag_id', 0).value
+        self._wand_id = self.declare_parameter('wand_tag_id', -1).value
         buffer_seconds = self.declare_parameter('buffer_seconds', 3.0).value
         # How long to hold a tap waiting for the camera to produce a later
         # detection. Must exceed the worst combined arrival jitter (~90 ms
@@ -90,20 +90,49 @@ class TapLocalizer(Node):
 
         self._n_taps = 0
         self._n_located = 0
+        self._n_det_msgs = 0
+        self._ids_seen = set()
+        self.create_timer(
+            self.declare_parameter('status_period', 5.0).value, self._status)
         self.get_logger().info(
-            f'wand tag id {self._wand_id}; buffering {buffer_seconds:.1f} s of '
-            f'detections, holding taps up to {self._max_wait * 1000:.0f} ms')
+            f'wand tag id {self._wand_id if self._wand_id >= 0 else "(any)"}; '
+            f'buffering {buffer_seconds:.1f} s of detections, holding taps up to '
+            f'{self._max_wait * 1000:.0f} ms')
 
     def _on_tags(self, msg):
+        self._n_det_msgs += 1
         for det in msg.detections:
-            if det.id != self._wand_id:
+            # wand_tag_id < 0 means "whichever tag is in view", which is what you
+            # want with a single tag: an ID mismatch would otherwise look exactly
+            # like the tag never being visible.
+            if self._wand_id >= 0 and det.id != self._wand_id:
                 continue
+            self._ids_seen.add(det.id)
             # center is already in PIXEL coordinates -- no intrinsics, no depth,
             # no deprojection needed for horizontal association.
             self._poses.append(
                 (stamp_to_sec(msg.header.stamp), det.center.x, det.center.y))
             break
         self._resolve_pending()
+
+    def _status(self):
+        """
+        Periodic input health. Without this, an empty pose buffer (wrong tag ID,
+        topic not flowing, QoS mismatch) is indistinguishable from the tag simply
+        not being visible at the tap -- they produce the same 'NO TAG' warning.
+        """
+        if self._poses:
+            age = self.get_clock().now().nanoseconds * 1e-9 - self._poses[-1][0]
+            self.get_logger().info(
+                f'inputs: {len(self._poses)} poses buffered '
+                f'(newest {age * 1000:.0f} ms old), tag ids seen '
+                f'{sorted(self._ids_seen)}, {self._n_taps} taps, '
+                f'{self._n_located} located')
+        else:
+            self.get_logger().warn(
+                f'inputs: NO poses buffered after {self._n_det_msgs} detection '
+                'messages — wrong wand_tag_id, or /tag_detections not flowing. '
+                'Check `ros2 topic echo /tag_detections --once` for the real id.')
 
     def _on_tap(self, msg):
         self._n_taps += 1
