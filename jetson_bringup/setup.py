@@ -35,6 +35,7 @@ setup(
             'wand_pointer = jetson_bringup.wand_pointer:main',
             'tap_detector = jetson_bringup.tap_detector:main',
             'tap_localizer = jetson_bringup.tap_localizer:main',
+            'tap_game = jetson_bringup.tap_game:main',
         ],
     },
 )

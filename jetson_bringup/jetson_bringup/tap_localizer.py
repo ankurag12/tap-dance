@@ -246,7 +246,9 @@ class TapLocalizer(Node):
             f'(bracket {dt * 1000:4.1f} ms, alpha {alpha:.2f}, '
             f'moved {travel:5.1f} px, snapping would cost {snap_err:4.1f} px)'
             f'   [{self._n_located}/{self._n_taps} located]')
-        self._publish(tap_t, u, v)
+        # Interpolating between close frames leaves at most a fraction of the
+        # inter-frame travel as error; half of it is a fair bound.
+        self._publish(tap_t, u, v, abs(u1 - u0) / 2.0)
 
     def _report_last(self, tap_t, before):
         t0, u0, v0 = before
@@ -263,16 +265,23 @@ class TapLocalizer(Node):
             f'(pose {age_ms:5.1f} ms old, horiz speed '
             f'{"n/a" if speed is None else f"{speed:6.0f} px/s"}, '
             f'implied u drift {drift})   [{self._n_located}/{self._n_taps} located]')
-        self._publish(tap_t, u0, v0)
+        # The drift over the staleness window IS the uncertainty here.
+        self._publish(tap_t, u0, v0,
+                      0.0 if speed is None else speed * (tap_t - t0))
 
-    def _publish(self, tap_t, u, v):
+    def _publish(self, tap_t, u, v, u_uncertainty):
         out = PointStamped()
         out.header.stamp.sec = int(tap_t)
         out.header.stamp.nanosec = int((tap_t % 1.0) * 1e9)
         out.header.frame_id = 'image'      # pixel coordinates, not a TF frame
         out.point.x = float(u)
         out.point.y = float(v)
-        out.point.z = 0.0
+        # z carries the estimated HORIZONTAL uncertainty in pixels, not a
+        # coordinate. Deliberate reuse of an otherwise-unused field so consumers
+        # can reject untrustworthy taps without a custom message type: the
+        # measured worst case was a 188 ms-old pose at 309 px/s = 58 px of drift,
+        # which must not be treated as equal to a 0.4 px interpolation.
+        out.point.z = float(u_uncertainty)
         self._pub.publish(out)
 
 
