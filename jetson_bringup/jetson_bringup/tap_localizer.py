@@ -73,8 +73,15 @@ class TapLocalizer(Node):
         # changes the tag's v but preserves its u, and association keys on u. So
         # a detection from shortly before contact carries the horizontal position
         # we need, and demanding a detection AFTER the tap discards good data.
-        # The reported horizontal velocity is what validates the substitution.
-        self._max_stale = self.declare_parameter('max_stale', 0.25).value
+        #
+        # Deliberately generous (500 ms), because staleness is NOT the real risk
+        # and is already guarded better elsewhere: what matters is how far the tag
+        # drifted HORIZONTALLY over that interval, which is reported as the
+        # uncertainty and gated downstream. A 400 ms-old pose from a hovering wand
+        # is worth more than rejecting the tap outright; a 400 ms-old pose from a
+        # wand still travelling produces a large drift estimate and gets rejected
+        # on its own merits. A tight cutoff here just discards the good case too.
+        self._max_stale = self.declare_parameter('max_stale', 0.50).value
         # If the pose immediately before the tap is at least this fresh, resolve
         # IMMEDIATELY instead of waiting max_wait for a bracket. Measured: hover
         # taps move ~0-1 px between frames, so interpolation adds under a pixel
