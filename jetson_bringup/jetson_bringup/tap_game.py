@@ -46,7 +46,7 @@ import rclpy
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
 
 from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
 
@@ -95,6 +95,8 @@ class TapGame(Node):
             AprilTagDetectionArray, '/tag_detections', self._on_tags, qos)
         self.create_subscription(
             PointStamped, '/wand/tap_pixel', self._on_tap_pixel, 10)
+        self.create_subscription(
+            Header, '/wand/tap_unlocated', self._on_tap_unlocated, 10)
         self._pub = self.create_publisher(String, '/game/status', 10)
 
         self._round = 0
@@ -105,6 +107,7 @@ class TapGame(Node):
         self._last_seen_t = None
         self._last_seen_u = None
         self._on_target_t = None
+        self._unlocated = 0
         # How stale a sighting may be before hover reports "tag not seen".
         self._hover_timeout = self.declare_parameter('hover_timeout', 0.25).value
 
@@ -217,6 +220,24 @@ class TapGame(Node):
         self._results.append((self._target, outcome, reaction))
         self._next_round()
 
+    def _on_tap_unlocated(self, msg):
+        """The firmware saw a tap the camera could not place.
+
+        Reported rather than ignored: the player DID tap, and telling them the
+        camera lost the tag is actionable ('hold the wand so the tag faces the
+        camera') where silence is not. Silently dropping it also inflates the
+        score, because the round keeps running and the eventual reaction time
+        includes this wasted attempt.
+        """
+        if self._state != 'waiting':
+            return
+        tap_t = stamp_to_sec(msg.stamp)
+        if tap_t < self._prompt_t:
+            return
+        self._unlocated += 1
+        self._say('   TAP SEEN but the camera could not see the tag then — '
+                  'angle the wand so the tag faces the camera, and try again')
+
     def _tick(self):
         now = self._now()
 
@@ -255,6 +276,12 @@ class TapGame(Node):
         timeouts = [r for r in self._results if r[1] == 'TIMEOUT']
         lines = ['', '=' * 52, f'  {len(hits)}/{len(self._results)} hits   '
                  f'{len(wrong)} wrong   {len(timeouts)} timed out']
+        if self._unlocated:
+            # Not a player error: taps the camera could not place. A high count
+            # means the tag is not visible at the moment of contact, which is a
+            # MECHANICAL problem (tag orientation/occlusion), not a tuning one.
+            lines.append(f'  {self._unlocated} taps detected but not localizable '
+                         '— tag not visible at contact')
         if hits:
             times = sorted(r[2] for r in hits)
             lines.append(f'  reaction: best {times[0] * 1000:.0f} ms   '

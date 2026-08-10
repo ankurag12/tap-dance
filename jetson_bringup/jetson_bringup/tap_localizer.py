@@ -95,6 +95,11 @@ class TapLocalizer(Node):
         self.create_subscription(Header, '/wand/tap', self._on_tap, 10)
 
         self._pub = self.create_publisher(PointStamped, '/wand/tap_pixel', 10)
+        # A tap the firmware detected but the camera could not place. Published
+        # so the application can TELL THE PLAYER their input was received but
+        # unusable -- silently dropping it looks identical to the tap detector
+        # having missed, and the player just waits, inflating their score.
+        self._pub_unlocated = self.create_publisher(Header, '/wand/tap_unlocated', 10)
 
         # Retry pending taps even when no new detections arrive, so a tap with
         # no following frame still gets reported (as "tag not visible") instead
@@ -221,8 +226,16 @@ class TapLocalizer(Node):
             else:
                 self.get_logger().warn(
                     f'TAP @ {tap_t:.3f} — NO TAG at all near the tap instant.')
+            self._announce_unlocated(tap_t)
 
         self._pending = still_pending
+
+    def _announce_unlocated(self, tap_t):
+        hdr = Header()
+        hdr.stamp.sec = int(tap_t)
+        hdr.stamp.nanosec = int((tap_t % 1.0) * 1e9)
+        hdr.frame_id = 'unlocated'
+        self._pub_unlocated.publish(hdr)
 
     def _h_speed(self, sample):
         """Horizontal pixel speed just before `sample`, to sanity-check the
