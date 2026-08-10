@@ -75,6 +75,12 @@ class TapLocalizer(Node):
         # we need, and demanding a detection AFTER the tap discards good data.
         # The reported horizontal velocity is what validates the substitution.
         self._max_stale = self.declare_parameter('max_stale', 0.25).value
+        # If the pose immediately before the tap is at least this fresh, resolve
+        # IMMEDIATELY instead of waiting max_wait for a bracket. Measured: hover
+        # taps move ~0-1 px between frames, so interpolation adds under a pixel
+        # of accuracy -- not worth 300 ms of feedback latency in a reaction-time
+        # game. Waiting still happens when the last pose is older than this.
+        self._fresh_enough = self.declare_parameter('fresh_enough', 0.06).value
 
         # 30 Hz * buffer_seconds, with headroom.
         self._poses = deque(maxlen=int(60 * buffer_seconds))
@@ -184,8 +190,14 @@ class TapLocalizer(Node):
                 self._report_interp(tap_t, before, after)
                 continue
 
+            # Already have a fresh pose from just before the tap: resolve NOW
+            # rather than spending max_wait chasing a bracket worth under a pixel.
+            if before is not None and (tap_t - before[0]) <= self._fresh_enough:
+                self._report_last(tap_t, before)
+                continue
+
             # Keep waiting -- a later detection may still arrive and allow
-            # interpolation, which beats the fallback.
+            # interpolation, which beats a stale fallback.
             if now - first_seen < self._max_wait:
                 still_pending.append((tap_t, first_seen))
                 continue

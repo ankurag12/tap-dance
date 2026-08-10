@@ -102,9 +102,14 @@ class TapGame(Node):
         self._prompt_t = None
         self._results = []          # (target, outcome, reaction_s)
         self._hover = None
-        self._last_hover_log = 0.0
+        self._last_seen_t = None
+        self._last_seen_u = None
+        self._on_target_t = None
+        # How stale a sighting may be before hover reports "tag not seen".
+        self._hover_timeout = self.declare_parameter('hover_timeout', 0.25).value
 
         self.create_timer(0.1, self._tick)
+        self.create_timer(0.1, self._report_hover)
         self._state = 'countdown'
         self._countdown_until = self._now() + self._start_delay
         self._say('targets: ' + ',  '.join(
@@ -129,20 +134,40 @@ class TapGame(Node):
         return best
 
     def _on_tags(self, msg):
-        """Live hover feedback: which region the wand is currently over.
+        """Record the latest tag sighting. Reporting happens on a timer.
 
-        Without this the player is blind to whether the camera can even see the
-        tag, which is the difference between 'I missed' and 'the system did not
-        see me'. Detection was measured at 98% of frames when stationary but far
-        lower in motion, so this doubles as a cue to hold still before tapping.
+        Doing the reporting here instead would only ever fire when the tag is
+        FOUND -- and detection drops to 60-77% during motion, so a message with
+        an empty detection list never reaches the loop body. The player would
+        then see no feedback at all while moving, and 'wand over: pen' only once
+        they had stopped and the tag was re-acquired. Waiting for that cue
+        serialises move-then-tap and inflates reaction times.
         """
         for det in msg.detections:
-            region = self._match(det.center.x)
-            if region != self._hover:
-                self._hover = region
-                if self._state == 'waiting':
-                    self._say(f'   wand over: {region or "(between targets)"}')
+            self._last_seen_t = self._now()
+            self._last_seen_u = det.center.x
             return
+
+    def _report_hover(self):
+        """Continuous hover state, including when the tag is NOT visible."""
+        if self._state != 'waiting':
+            return
+        fresh = (self._last_seen_t is not None
+                 and self._now() - self._last_seen_t <= self._hover_timeout)
+        if not fresh:
+            region = '(tag not seen)'
+        else:
+            region = self._match(self._last_seen_u) or '(between targets)'
+            if region == self._target:
+                region += '  <-- ON TARGET, tap now'
+        if region != self._hover:
+            self._hover = region
+            self._say(f'   wand over: {region}')
+            # First arrival on target: split the round into move time and dwell
+            # time, so a slow score can be attributed to the player moving or to
+            # the player hesitating/waiting for feedback.
+            if self._on_target_t is None and region.startswith(self._target):
+                self._on_target_t = self._now()
 
     def _on_tap_pixel(self, msg):
         if self._state != 'waiting':
@@ -168,8 +193,18 @@ class TapGame(Node):
 
         if hit_region == self._target:
             outcome = 'HIT'
-            self._say(f'   HIT  {self._target}  in {reaction * 1000:.0f} ms '
-                      f'(u={u:.0f}, +/-{uncertainty:.0f} px)')
+            # Split move vs dwell: a slow round is either a slow traverse or
+            # hesitation once already on target. Only the second is something
+            # feedback latency can be blamed for.
+            if self._on_target_t is not None:
+                move = self._on_target_t - self._prompt_t
+                dwell = tap_t - self._on_target_t
+                split = (f', move {move * 1000:.0f} ms + dwell '
+                         f'{dwell * 1000:.0f} ms')
+            else:
+                split = ', never seen on target before the tap'
+            self._say(f'   HIT  {self._target}  in {reaction * 1000:.0f} ms'
+                      f'{split}  (u={u:.0f}, +/-{uncertainty:.0f} px)')
         elif hit_region is None:
             outcome = 'WRONG'
             self._say(f'   MISS — tapped between targets (u={u:.0f}), '
@@ -208,6 +243,8 @@ class TapGame(Node):
             or [n for n, _ in self._targets]
         self._target = random.choice(choices)
         self._prompt_t = self._now()
+        self._on_target_t = None
+        self._hover = None
         self._state = 'waiting'
         self._say(f'[{self._round}/{self._rounds}]  TAP THE  >>> '
                   f'{self._target.upper()} <<<')
