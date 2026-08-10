@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Tap detector — the "WHEN" half of the tap game.
+# Tap signal characterization tool — NOT the tap detector any more.
 #
-# The camera says WHERE the wand is; this says WHEN it hit something. A camera
-# at 30 Hz cannot tell a tap from a hover (contact is millimetres over
-# milliseconds, and it falls between frames), so the discrete contact event has
-# to come from the IMU.
+# Detection now runs ON THE M5STICK: the firmware samples at ~485 Hz, applies the
+# threshold locally, and publishes /wand/tap. That change was forced by
+# measurement -- streaming fast enough to catch a 5-20 ms transient exhausted the
+# ESP32's UDP buffers (ENOMEM) and dropped ~40% of samples, and a dropped sample
+# can be the tap peak.
+#
+# So this node's job is now narrower: characterize the 100 Hz DIAGNOSTIC stream
+# on /m5stick/imu, and re-measure the tap-vs-swing separation if the wand or the
+# objects change. Its widths are aliased at 100 Hz by design; authoritative peaks
+# come from the firmware's Serial output. `detect` mode remains for comparing the
+# host-side threshold against the on-device one.
 #
 # SIGNAL: |‖a‖ - g|. The accelerometer always reads gravity (~9.81 m/s^2 at
 # rest) and its direction changes as the wand rotates, so per-axis thresholds
@@ -24,28 +31,16 @@
 # from abruptly stopping a hard swing -- both reach ~8 g. The physics difference
 # is DURATION. A tap is a collision: momentum reversed against a rigid object in
 # 5-20 ms. A swing is your arm applying force over a 100-300 ms stroke. So this
-# reports, for every threshold crossing, the peak AND the width together. Expect
-# taps high-and-narrow, swings lower-and-wide.
+# reports, for every threshold crossing, the peak AND the width together.
 #
 # WHY PER-AXIS MIN/MAX: the accelerometer clips PER AXIS, not on the magnitude,
 # so a saturated tap spread over two axes can still produce a magnitude well
-# below any obvious ceiling. Only the per-axis extremes reveal clipping -- and
-# clipping would flatten every hard tap to the same value, destroying exactly
-# the separation we are trying to measure.
-#
-# TWO MODES:
-#   characterize (default) -- no detection, just report what the signal does.
-#     Tap things, move as the game would make you move, and compare.
-#   detect -- emit /wand/tap (std_msgs/Header, stamp = tap instant) when the
-#     deviation crosses `threshold`, with a refractory lockout.
-#
-# ONSET vs PEAK: the event is stamped at the FIRST crossing, not the peak. Onset
-# is physically closer to the contact instant; the peak lags by a few ms.
+# below any obvious ceiling. Only the per-axis extremes reveal clipping.
 #
 # Usage:
 #   ros2 run jetson_bringup tap_detector
 #   ros2 run jetson_bringup tap_detector --ros-args -p excursion_floor:=20.0
-#   ros2 run jetson_bringup tap_detector --ros-args -p mode:=detect -p threshold:=100.0
+#   ros2 run jetson_bringup tap_detector --ros-args -p mode:=detect -p threshold:=90.0
 
 import math
 
@@ -113,7 +108,6 @@ class TapDetector(Node):
         # Range inference needs the largest magnitude ever seen, not just this
         # window's: a quiet window would otherwise "prove" a tiny range.
         self._session_max = 0.0
-        self._pinned = 0
         # Excursion state persists across windows so one straddling the boundary
         # is not split into two.
         self._active = False
@@ -139,6 +133,9 @@ class TapDetector(Node):
         self._axis_max = [float('-inf')] * 3
         self._excursions = []     # (peak, n_samples, duration_ms)
         self._taps = []
+        # Per-window, so the saturation warning describes THIS window rather
+        # than latching on forever after one clipped tap.
+        self._pinned = 0
 
     def _on_imu(self, msg):
         a = msg.linear_acceleration
@@ -222,12 +219,16 @@ class TapDetector(Node):
             if len(self._excursions) > self._max_show:
                 lines.append(f'      ... and {len(self._excursions) - self._max_show} more')
 
-        # A tap transient is ~5-20 ms. At 100 Hz that is 1-2 samples, so width
-        # is barely a measurement and the peak may be missed entirely.
+        # A tap transient is ~5-20 ms, so at this stream's rate the widths above
+        # are heavily aliased. That is expected, not a problem to fix: detection
+        # moved ON-DEVICE (the firmware samples ~485 Hz and publishes /wand/tap),
+        # and /m5stick/imu is deliberately decimated to 100 Hz because streaming
+        # faster exhausted the UDP buffers and dropped ~40% of samples.
         if rate < 150:
-            lines.append(f'  NOTE: {rate:.0f} Hz = {1000 / rate:.0f} ms/sample; a tap '
-                         'lasts ~5-20 ms, so width is quantised to 1-2 samples. '
-                         'Raise the firmware rate to 400 Hz to make width usable.')
+            lines.append(f'  NOTE: this stream is {rate:.0f} Hz by design '
+                         f'({1000 / rate:.0f} ms/sample), so the widths above are '
+                         'aliased. Authoritative tap peaks come from the '
+                         "firmware's Serial output, not from here.")
 
         if self._mode == 'detect':
             lines.append(f'  taps emitted: {len(self._taps)}')
