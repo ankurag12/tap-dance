@@ -1,2 +1,2 @@
 # tap-dance
-hack-a-mole on desk objects
+Whack-a-mole on desk objects
