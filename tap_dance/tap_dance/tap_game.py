@@ -75,7 +75,13 @@ class TapGame(Node):
         # one -- an isolated target 450 px from anything else would still reject
         # a tap 60 px off. Per-target keeps close pairs unambiguous while leaving
         # isolated targets generous.
-        max_hw = self.declare_parameter('max_halfwidth', 200.0).value
+        # Cap exists only so a single isolated target cannot claim the whole
+        # image; with two or more targets the half-distance to the nearest
+        # neighbour is the natural boundary and regions should MEET. At 200 the
+        # cap bound instead, leaving a 335 px dead zone between targets 735 px
+        # apart, so taps 16 px outside a region scored as "between targets" even
+        # though the intended target was unambiguous.
+        max_hw = self.declare_parameter('max_halfwidth', 400.0).value
         self._tolerance = {}
         for i, (name, cu) in enumerate(self._targets):
             others = [abs(cu - ou) for j, (_, ou) in enumerate(self._targets) if j != i]
@@ -86,9 +92,19 @@ class TapGame(Node):
         self._start_delay = self.declare_parameter('start_delay', 3.0).value
         # Reject a tap whose horizontal uncertainty is a large fraction of the
         # tightest region -- see the header note.
-        tightest = min(self._tolerance.values())
+        # Absolute backstop only. The real test is whether the uncertainty
+        # changes WHICH target the tap resolves to (see _on_tap_pixel): a fixed
+        # threshold rejected a tap uncertain to 101 px against targets 735 px
+        # apart, where 101 px cannot possibly confuse one for the other.
         self._max_uncertainty = self.declare_parameter(
-            'max_uncertainty', tightest / 2.0).value
+            'max_uncertainty', 250.0).value
+        # Game-level refractory, measured from the last SCORED tap. The device
+        # refractory (100 ms) collapses the ring-down of one contact, but a
+        # follow-through or second bounce ~500 ms later is a genuine new event --
+        # and since a scored tap immediately advances the round, it was landing
+        # as the next round's answer.
+        self._tap_lockout = self.declare_parameter('tap_lockout', 0.40).value
+        self._last_scored_t = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(
@@ -185,14 +201,27 @@ class TapGame(Node):
                       'ms before the prompt)')
             return
 
+        if self._last_scored_t is not None \
+                and tap_t - self._last_scored_t < self._tap_lockout:
+            self._say(f'   (ignoring a tap {(tap_t - self._last_scored_t) * 1000:.0f} '
+                      'ms after the last scored one — bounce or follow-through)')
+            return
+
         if uncertainty > self._max_uncertainty:
             self._say(f'   (ignoring a tap: position uncertain to '
-                      f'{uncertainty:.0f} px > {self._max_uncertainty:.0f} px — '
-                      'hold the wand steadier over the target)')
+                      f'{uncertainty:.0f} px — beyond any usable bound)')
+            return
+
+        # Does the uncertainty actually change the answer? Resolve the tap at its
+        # nominal position and at both extremes of the error bar; if all three
+        # agree, the uncertainty is irrelevant however large it looks.
+        hit_region = self._match(u)
+        if not (self._match(u - uncertainty) == hit_region == self._match(u + uncertainty)):
+            self._say(f'   (ignoring a tap: u={u:.0f} +/-{uncertainty:.0f} px spans '
+                      'more than one target — hold the wand steadier)')
             return
 
         reaction = tap_t - self._prompt_t
-        hit_region = self._match(u)
 
         if hit_region == self._target:
             outcome = 'HIT'
@@ -218,6 +247,7 @@ class TapGame(Node):
                       f'wanted {self._target}')
 
         self._results.append((self._target, outcome, reaction))
+        self._last_scored_t = tap_t
         self._next_round()
 
     def _on_tap_unlocated(self, msg):
