@@ -35,6 +35,9 @@ def generate_launch_description():
     width = LaunchConfiguration('width')
     height = LaunchConfiguration('height')
     tag_size = LaunchConfiguration('tag_size')
+    auto_exposure = LaunchConfiguration('auto_exposure')
+    exposure = LaunchConfiguration('exposure')
+    gain = LaunchConfiguration('gain')
 
     args = [
         DeclareLaunchArgument(
@@ -47,6 +50,29 @@ def generate_launch_description():
             'tag_size', default_value='0.1225',
             description='AprilTag black-square edge length in meters. Must match '
                         'the tag in view or the reported pose distance is wrong.'),
+        # Exposure controls MOTION BLUR, which is what limits tag detection on a
+        # moving wand. Auto-exposure optimises for brightness and will happily
+        # pick 20-33 ms indoors; at a hand speed of ~500 px/s that smears the tag
+        # by 10-16 px, and a tag only ~40 px wide loses the corner sharpness
+        # AprilTag needs to decode. Measured: 97-99% detection when stationary,
+        # 38-53% in motion.
+        #
+        # Freezing motion means a SHORT exposure, and the cost is a darker image
+        # -- hence more gain, which adds noise. That noise/blur trade is the real
+        # tuning axis here, so both are exposed.
+        DeclareLaunchArgument(
+            'auto_exposure', default_value='true',
+            description='Color auto-exposure. Set false to pin exposure/gain '
+                        'and stop AE choosing a motion-blurring exposure.'),
+        DeclareLaunchArgument(
+            'exposure', default_value='80',
+            description='Color exposure when auto_exposure:=false, in units of '
+                        '100 us (80 = 8 ms). Lower freezes motion; compensate '
+                        'with gain.'),
+        DeclareLaunchArgument(
+            'gain', default_value='128',
+            description='Color sensor gain when auto_exposure:=false. Raise to '
+                        'offset a short exposure, at the cost of noise.'),
     ]
 
     # LaunchConfiguration values arrive as strings; wrap them with an explicit
@@ -66,6 +92,10 @@ def generate_launch_description():
             'enable_depth': False,
             'enable_infra1': False,
             'enable_infra2': False,
+            'rgb_camera.enable_auto_exposure': ParameterValue(
+                auto_exposure, value_type=bool),
+            'rgb_camera.exposure': ParameterValue(exposure, value_type=int),
+            'rgb_camera.gain': ParameterValue(gain, value_type=int),
         }],
         # Publish the color stream on the topics RectifyNode subscribes to.
         remappings=[
