@@ -1,0 +1,35 @@
+# Custom Isaac ROS image layer — bakes in the extra ROS packages we'd otherwise
+# `apt install` by hand, so they survive container recreation.
+# (run_dev.sh creates the container with `docker run --rm`, which deletes it —
+# and any interactive installs — when it fully stops or the board reboots.)
+#
+# Enabled via ~/.isaac_ros_common-config (see isaac_ros_common-config in this dir):
+#   CONFIG_IMAGE_KEY=ros2_humble.realsense.user
+#   CONFIG_DOCKER_SEARCH_DIRS=(<abs path to this docker/ dir>)
+#
+# build_image_layers.sh passes BASE_IMAGE = the previously-built layer
+# (…​.realsense); this layer adds our apt packages on top of it.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-isaac-ros-image-proc \
+        ros-humble-isaac-ros-visual-slam \
+        ros-humble-foxglove-bridge \
+        ros-humble-robot-localization \
+        ros-humble-diagnostic-updater \
+        ros-humble-rosbag2-storage-mcap \
+        ros-humble-isaac-ros-yolov8 \
+        ros-humble-isaac-ros-dnn-image-encoder \
+        ros-humble-isaac-ros-tensor-rt \
+        ros-humble-isaac-ros-examples \
+    && rm -rf /var/lib/apt/lists/*
+
+# Auto-source the workspace overlay in every new shell (a fresh container shell
+# only sources the underlay). The guard makes it a no-op before the workspace is
+# first built. Appended to the SYSTEM-WIDE /etc/bash.bashrc (not /home/admin/.bashrc)
+# because the 'admin' user's home is created at container-run time by run_dev.sh,
+# so it doesn't exist yet at image-build time. Baked because the container is --rm.
+RUN echo '[ -f /workspaces/isaac_ros-dev/install/setup.bash ] && source /workspaces/isaac_ros-dev/install/setup.bash' \
+    >> /etc/bash.bashrc
+
