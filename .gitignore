@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- PlatformIO (firmware build tree + fetched libs) ---
+.pio/
+.vscode/
+
+# --- ROS 2 / colcon (built in the workspace, not here) ---
+build/
+install/
+log/
+
+# --- WiFi + agent credentials: only secrets.h.example is tracked ---
+firmware/m5stick_imu/include/secrets.h
+
+# --- macOS ---
+.DS_Store
