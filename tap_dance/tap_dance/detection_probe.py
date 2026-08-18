@@ -15,10 +15,10 @@
 #                  that tells you whether a detection is TRUSTWORTHY vs. flickering.
 #
 # Usage:
-#   ros2 run jetson_bringup detection_probe
-#   ros2 run jetson_bringup detection_probe --ros-args -p period:=2.0
-#   ros2 run jetson_bringup detection_probe --ros-args -p classes:='["car","truck"]'
-#   ros2 run jetson_bringup detection_probe --ros-args -p topic:=/detections_output
+#   ros2 run tap_dance detection_probe
+#   ros2 run tap_dance detection_probe --ros-args -p period:=2.0
+#   ros2 run tap_dance detection_probe --ros-args -p classes:='["car","truck"]'
+#   ros2 run tap_dance detection_probe --ros-args -p topic:=/detections_output
 
 import rclpy
 from rclpy.node import Node

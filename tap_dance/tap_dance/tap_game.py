@@ -36,7 +36,7 @@
 # Rejecting is honest; guessing would silently corrupt the score.
 #
 # Usage (measure your target u values first, e.g. with tap_localizer):
-#   ros2 run jetson_bringup tap_game --ros-args \
+#   ros2 run tap_dance tap_game --ros-args \
 #     -p target_names:='["cup","book","mug","pen"]' \
 #     -p target_u:='[131.0, 450.0, 700.0, 866.0]'
 

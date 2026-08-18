@@ -25,9 +25,9 @@
 # and the z component is in-plane roll.
 #
 # Usage:
-#   ros2 run jetson_bringup tag_pose_stats
-#   ros2 run jetson_bringup tag_pose_stats --ros-args -p period:=5.0
-#   ros2 run jetson_bringup tag_pose_stats --ros-args -p tag_id:=0 -p point_range:=1.5
+#   ros2 run tap_dance tag_pose_stats
+#   ros2 run tap_dance tag_pose_stats --ros-args -p period:=5.0
+#   ros2 run tap_dance tag_pose_stats --ros-args -p tag_id:=0 -p point_range:=1.5
 
 import math
 

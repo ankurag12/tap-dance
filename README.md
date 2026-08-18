@@ -67,9 +67,9 @@ docker run -d --restart unless-stopped --net=host \
 cd firmware/m5stick_imu && pio run -t upload
 
 # in the Isaac ROS container
-ros2 launch jetson_bringup realsense_apriltag.launch.py tag_size:=0.1225 width:=1280 height:=720
-ros2 run jetson_bringup tap_localizer
-ros2 run jetson_bringup tap_game --ros-args \
+ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 width:=1280 height:=720
+ros2 run tap_dance tap_localizer
+ros2 run tap_dance tap_game --ros-args \
   -p target_names:='["cup","pen"]' -p target_u:='[131.0, 866.0]'
 ```
 

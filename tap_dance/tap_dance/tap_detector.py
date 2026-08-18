@@ -38,9 +38,9 @@
 # below any obvious ceiling. Only the per-axis extremes reveal clipping.
 #
 # Usage:
-#   ros2 run jetson_bringup tap_detector
-#   ros2 run jetson_bringup tap_detector --ros-args -p excursion_floor:=20.0
-#   ros2 run jetson_bringup tap_detector --ros-args -p mode:=detect -p threshold:=90.0
+#   ros2 run tap_dance tap_detector
+#   ros2 run tap_dance tap_detector --ros-args -p excursion_floor:=20.0
+#   ros2 run tap_dance tap_detector --ros-args -p mode:=detect -p threshold:=90.0
 
 import math
 

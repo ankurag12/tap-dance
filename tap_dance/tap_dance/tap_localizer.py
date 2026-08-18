@@ -35,8 +35,8 @@
 # This node reports both and leaves the matching to the next stage.
 #
 # Usage:
-#   ros2 run jetson_bringup tap_localizer
-#   ros2 run jetson_bringup tap_localizer --ros-args -p wand_tag_id:=0
+#   ros2 run tap_dance tap_localizer
+#   ros2 run tap_dance tap_localizer --ros-args -p wand_tag_id:=0
 
 from collections import deque
 

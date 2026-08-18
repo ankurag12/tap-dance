@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>jetson_bringup</name>
+  <name>tap_dance</name>
   <version>0.0.0</version>
-  <description>Launch files and configs that bring up Isaac ROS experiments on the Jetson Orin Nano (RealSense D456, AprilTag, Visual SLAM).</description>
+  <description>Tap-target game on real desk objects: an AprilTag-and-IMU wand supplies the contact event, a RealSense D456 supplies where it happened.</description>
   <maintainer email="ankur.ag12@gmail.com">hunter</maintainer>
   <license>Apache-2.0</license>
 

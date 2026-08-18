@@ -18,9 +18,9 @@
 #     fed apriltag the raw image and left rectify orphaned.
 #
 # Usage:
-#   ros2 launch jetson_bringup realsense_apriltag.launch.py
-#   ros2 launch jetson_bringup realsense_apriltag.launch.py tag_size:=0.06
-#   ros2 launch jetson_bringup realsense_apriltag.launch.py width:=848 height:=480
+#   ros2 launch tap_dance realsense_apriltag.launch.py
+#   ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.06
+#   ros2 launch tap_dance realsense_apriltag.launch.py width:=848 height:=480
 
 import launch
 from launch.actions import DeclareLaunchArgument

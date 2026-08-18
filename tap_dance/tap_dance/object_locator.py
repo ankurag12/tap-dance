@@ -27,8 +27,8 @@
 # fix it; not needed for the first playable version.
 #
 # Usage:
-#   ros2 run jetson_bringup object_locator
-#   ros2 run jetson_bringup object_locator --ros-args -p classes:='["cup","book"]'
+#   ros2 run tap_dance object_locator
+#   ros2 run tap_dance object_locator --ros-args -p classes:='["cup","book"]'
 
 import numpy as np
 import rclpy
@@ -39,7 +39,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import (BoundingBox3D, Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
-from jetson_bringup.detection_probe import class_name
+from tap_dance.detection_probe import class_name
 
 
 class ObjectLocator(Node):
