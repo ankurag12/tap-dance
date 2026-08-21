@@ -119,3 +119,4 @@ Next: replace hand-configured target positions with **TensorRT YOLOv8** detectio
 so the game names real objects with no setup.
 
 Scope and milestones: [`docs/capstone-tap-game.md`](docs/capstone-tap-game.md).
+Every command for running and debugging: [`docs/runbook.md`](docs/runbook.md).
