@@ -129,7 +129,31 @@ game pace.
 
 ---
 
-## 4. IR stream check (global shutter)
+## 4. IR / global shutter (the motion fix)
+
+The colour imager is rolling shutter, so motion SHEARS the tag and no exposure
+setting can fix it. The IR imagers are global shutter. Compare:
+
+```bash
+# colour baseline (rolling shutter)
+ros2 launch tap_dance realsense_apriltag.launch.py sensor:=color tag_size:=0.1225
+
+# IR, same resolution and rate: only the shutter changes
+ros2 launch tap_dance realsense_apriltag.launch.py sensor:=infra1 tag_size:=0.1225
+
+# IR at 60 FPS: halves inter-frame motion, but the tag shrinks to ~27 px
+ros2 launch tap_dance realsense_apriltag.launch.py sensor:=infra1 tag_size:=0.1225 \
+  width:=848 height:=480 fps:=60
+```
+
+Read `wand tag found N%` from `tap_localizer` for each while waving at game pace.
+The IR path drops RectifyNode (IR is factory rectified), so it is also one GPU
+node lighter.
+
+`exposure` is in MICROSECONDS for both sensors and converted internally --
+librealsense wants 100 us units for colour and microseconds for IR.
+
+### First-time IR sanity check
 
 The D456's colour imager is **rolling shutter** (motion shears the tag, which
 exposure cannot fix); the IR imagers are **global shutter**. Before switching the
