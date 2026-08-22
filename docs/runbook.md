@@ -141,24 +141,23 @@ ros2 topic list | grep -E "tap|m5stick|infra|color"
 
 Detection in motion, waving at game pace:
 
-| Sensor | Exposure | Found % |
-|---|---|---|
-| colour | auto | 38–70% |
-| colour | ~4 ms | 50–70% |
-| IR | auto | 50% (dim ambient IR -> AE picks a long exposure) |
-| **IR** | **2–4 ms** | **100%** |
+| Sensor | Exposure | Room | Found % |
+|---|---|---|---|
+| colour | auto | dim | 38–70% |
+| colour | 4 ms | dim | 50–70% |
+| IR | auto | daylight | 50% (scarce near-IR -> AE picks a long exposure) |
+| IR | 2–4 ms | daylight | 100% |
+| **colour** | **2 ms** | **daylight** | **~100%** ← the default |
 
-**IR needs an IR light source.** 100% was measured with daylight through an open
-window. The projector must stay off (its dots cover the tag), so the imagers run
-passive, and ambient near-IR indoors is scarce — LED lighting emits almost none.
-At night, expect the IR image to darken and detection to fall. Options, best
-first: a cheap IR illuminator/floodlight aimed at the play area; an incandescent
-or halogen lamp (rich in near-IR, unlike LED); a longer exposure (trades blur
-back in); or fall back to `sensor:=color`.
+**It is exposure plus light, not shutter type.** A short exposure freezes the tag;
+a bright scene is what makes a short exposure usable. An intermediate reading
+suggested the colour imager's rolling shutter was shearing the tag, but colour
+reaches ~100% too once the room is bright enough — the earlier colour sweep simply
+ran in a dimmer room.
 
-Both effects are real and each masked the other: exposure causes blur, and the
-colour imager's rolling shutter shears a moving tag regardless of exposure. The
-launch defaults are now IR at 4 ms.
+**A dim room breaks it.** At 2 ms in poor light the image underexposes and
+detection falls. Fixes: more room light, a longer exposure (`exposure:=4000`),
+or more gain (`gain:=248` works on `sensor:=infra1`, whose range is wider).
 
 ```bash
 # baseline: auto-exposure

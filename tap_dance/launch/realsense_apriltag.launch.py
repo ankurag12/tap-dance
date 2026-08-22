@@ -9,33 +9,38 @@
 # Nodes run as composable nodes in one container process, so Isaac ROS's NITROS
 # transport passes images between them on the GPU with zero copies.
 #
-# MEASURED (found % of frames with the tag, while waving at game pace):
-#   colour, auto exposure      38-70%   (varies a lot run to run)
-#   colour, ~4 ms              50-70%
-#   IR, auto exposure          50%      <- AE picks a LONG exposure: ambient
-#                                          near-IR is dim with the emitter off
-#   IR, 2-4 ms pinned          100%     <- the default configuration here
+# WHAT ACTUALLY LIMITS DETECTION: exposure, plus enough light to use it.
 #
-# Two independent effects, each of which was masking the other: exposure (blur)
-# and shutter type (shear). IR only wins once its exposure is pinned short, and
-# colour never reaches 100% even at a comparable exposure.
+# Measured (found % of frames containing the tag, waving at game pace):
+#   colour, auto exposure           38-70%   dim room, varies run to run
+#   colour, 4 ms, dim room          50-70%
+#   IR, auto exposure               50%      AE picks a long exposure: ambient
+#                                            near-IR is scarce, emitter off
+#   IR, 2-4 ms, daylight            100%
+#   colour, 2-4 ms, daylight        ~100%
 #
-# WHY THE IR OPTION EXISTS
-# The D456's colour imager is ROLLING SHUTTER; its left/right IR imagers are
-# GLOBAL SHUTTER. A rolling shutter reads rows sequentially, so a moving tag is
-# not merely blurred but SHEARED -- a square projects to a parallelogram, and
-# AprilTag's quad detection rejects it or decodes it wrongly. A shorter exposure
-# fixes blur but does nothing about shear, which matches what we measured: 100%
-# detection stationary, ~50% in motion, and an exposure sweep that changed little.
+# The last two lines are the point. An earlier reading suggested the colour
+# imager's ROLLING SHUTTER was to blame -- it reads rows sequentially, so a moving
+# tag is sheared as well as blurred, and no exposure setting fixes shear. That
+# theory does not survive the data: once the room was bright enough to expose a
+# 2 ms frame, colour reached ~100% too. The apparent shutter advantage was
+# confounded by scene brightness, because the colour sweep ran in a dimmer room
+# than the IR test.
 #
-# Three further advantages of the IR path:
-#   * The D456's IR is FACTORY RECTIFIED, so RectifyNode is skipped entirely --
-#     one less GPU node, less latency, less of the 8 GB unified memory.
-#   * IR is monochrome, so one third of the pixel data to move.
-#   * IR held a steady 30 FPS over USB where the colour stream measured ~20 and
-#     jittery, and offers 848x480 at 60/90 FPS for less inter-frame motion.
+# So COLOUR IS THE DEFAULT, despite IR looking better mid-investigation:
+#   * Visible light is abundant in any lit room; near-IR is not. LED lighting
+#     emits almost none, and the projector cannot help because its dot pattern
+#     lands on the tag. Colour is the more robust choice, not the weaker one.
+#   * Tag and YOLO detections then share ONE coordinate frame. The imagers are
+#     physically offset, so mixing them would need a registration step.
 #
-# The IR trade-offs, both real:
+# The IR path is kept (sensor:=infra1) and remains useful:
+#   * Global shutter, if shear ever does turn out to matter for faster motion.
+#   * Factory rectified, so RectifyNode is skipped.
+#   * Held a steady 30 FPS over USB where colour measured ~20 and jittery, and
+#     offers 848x480 at 60/90 FPS for less inter-frame motion.
+#
+# IR trade-offs:
 #   * The projector MUST be off (emitter_enabled 0) or its dot pattern lands on
 #     the tag. With it off the imagers rely on ambient IR -- adequate in this
 #     room, but LED-only lighting emits little.
@@ -199,9 +204,10 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     args = [
         DeclareLaunchArgument(
-            'sensor', default_value='infra1',
-            description="'infra1' (global shutter; the measured-best path) or "
-                        "'color' (rolling shutter, needs rectify)."),
+            'sensor', default_value='color',
+            description="'color' (default: reaches ~100% at 2 ms in a lit room, "
+                        "and shares a frame with YOLO) or 'infra1' (global "
+                        'shutter, factory rectified, but needs a near-IR source).'),
         DeclareLaunchArgument(
             'width', default_value='1280',
             description='Image width (px). 1080p OOMs the rectify GPU pool.'),
@@ -218,19 +224,21 @@ def generate_launch_description():
                         'the tag in view or the reported pose distance is wrong.'),
         DeclareLaunchArgument(
             'auto_exposure', default_value='false',
-            description='Defaults OFF: on the IR imager, auto-exposure sees dim '
-                        'ambient near-IR and picks a long, motion-blurring '
-                        'exposure. Pinning it took detection 50% -> 100%.'),
+            description='Defaults OFF. Auto-exposure optimises brightness and '
+                        'picks a long, motion-blurring exposure; pinning it short '
+                        'took detection in motion from ~50% to ~100%.'),
         DeclareLaunchArgument(
-            'exposure', default_value='4000',
+            'exposure', default_value='2000',
             description='Exposure in MICROSECONDS when auto_exposure:=false; '
-                        'converted per sensor (see the note at the top). 4 ms and '
-                        '2 ms both measured 100% in motion; 4 ms keeps more light '
-                        'margin, 2 ms freezes faster motion.'),
+                        'converted per sensor (see the note at the top). 2 ms and '
+                        '4 ms measured alike in a bright room; 2 ms freezes faster '
+                        'motion, so it is the default. Needs a well-lit scene -- '
+                        'in a dim room a short exposure underexposes and detection '
+                        'falls.'),
         DeclareLaunchArgument(
-            'gain', default_value='248',
-            description='Sensor gain when auto_exposure:=false, near max for the '
-                        'stereo module. Needed to offset a 4 ms exposure under '
-                        'ambient IR only; costs noise.'),
+            'gain', default_value='128',
+            description='Sensor gain when auto_exposure:=false. The stereo module '
+                        'accepts more (try 248 with sensor:=infra1); raise it to '
+                        'offset a short exposure, at the cost of noise.'),
     ]
     return launch.LaunchDescription(args + [OpaqueFunction(function=launch_setup)])

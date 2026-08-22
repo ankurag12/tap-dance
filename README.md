@@ -106,9 +106,9 @@ each message is a game event and a loss means the hit does not register.
 | Tap vs. hard-swing separation | peak 100–120 vs 40–75 m/s² → threshold 90 |
 | AprilTag out-of-plane jitter | 1.9–5.7° (12 cm tag), 5.7–11.3° (6 cm) |
 | Tag detection, wand stationary | 97–100% of frames |
-| Tag detection in motion — colour, auto exposure | 38–70% |
-| Tag detection in motion — IR, auto exposure | 50% (AE picks a long exposure) |
-| **Tag detection in motion — IR, 4 ms pinned** | **100%** (needs an IR light source) |
+| Tag detection in motion — auto exposure | 38–70% |
+| Tag detection in motion — 4 ms, dim room | 50–70% |
+| **Tag detection in motion — 2 ms, lit room** | **~100%** (colour or IR) |
 | Tap → score latency | ~75 ms, from ~330 ms |
 | **Game result** | **10/10 hits, 0 unlocalizable, median reaction 868 ms** |
 
