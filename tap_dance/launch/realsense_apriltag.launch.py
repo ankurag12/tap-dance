@@ -20,8 +20,7 @@
 # Three further advantages of the IR path:
 #   * The D456's IR is FACTORY RECTIFIED, so RectifyNode is skipped entirely --
 #     one less GPU node, less latency, less of the 8 GB unified memory.
-#   * IR is monochrome, which is what AprilTag wants anyway; the node accepts
-#     mono8 directly (mapped to VPI_IMAGE_FORMAT_U8).
+#   * IR is monochrome, so one third of the pixel data to move.
 #   * IR held a steady 30 FPS over USB where the colour stream measured ~20 and
 #     jittery, and offers 848x480 at 60/90 FPS for less inter-frame motion.
 #
@@ -32,6 +31,10 @@
 #   * Lower resolutions shrink the tag: a 12 cm tag spans ~40 px at 1280x720 but
 #     only ~27 px at 848x480, near the decode floor. Start at 720p so the shutter
 #     is the only variable changed.
+#   * cuAprilTags rejects mono8 outright ("only 'rgb8' or 'bgr8' image input"),
+#     so the IR path needs an ImageFormatConverterNode to widen Y8 to rgb8. That
+#     cancels the node saved by skipping rectify -- IR is still worth it for the
+#     shutter, but not for pipeline length.
 #
 # EXPOSURE UNITS DIFFER BY SENSOR -- a genuine librealsense trap:
 #   colour  rgb_camera.exposure    in units of 100 us  (80 = 8 ms)
@@ -85,13 +88,19 @@ def launch_setup(context, *args, **kwargs):
             'depth_module.profile': profile,
             'depth_module.emitter_enabled': 0,
             'depth_module.enable_auto_exposure': auto_exposure,
+            # The D456's own IMU is unused -- inertial data comes from the wand's
+            # M5Stick -- and the motion module adds traffic to a USB link that has
+            # thrown control_transfer errors before.
+            'enable_gyro': False,
+            'enable_accel': False,
         }
         if not auto_exposure:
             camera_params['depth_module.exposure'] = exposure_us
             camera_params['depth_module.gain'] = gain
-        # Factory-rectified: feed AprilTag directly, no RectifyNode.
+        # Factory-rectified, so no RectifyNode -- but the format converter
+        # below still has to widen Y8 to rgb8, so publish into its input.
         camera_remaps = [
-            ('infra1/image_rect_raw', 'image_rect'),
+            ('infra1/image_rect_raw', 'ir_mono'),
             ('infra1/camera_info', 'camera_info_rect'),
         ]
     else:
@@ -119,7 +128,25 @@ def launch_setup(context, *args, **kwargs):
         remappings=camera_remaps,
     )]
 
-    # --- 2) Rectify: colour only; IR is already rectified ------------------
+    # --- 2a) IR only: mono8 -> rgb8, because cuAprilTags refuses mono8 -------
+    if use_ir:
+        nodes.append(ComposableNode(
+            package='isaac_ros_image_proc',
+            plugin='nvidia::isaac_ros::image_proc::ImageFormatConverterNode',
+            name='ir_to_rgb',
+            namespace='',
+            parameters=[{
+                'encoding_desired': 'rgb8',
+                'image_width': width,
+                'image_height': height,
+            }],
+            remappings=[
+                ('image_raw', 'ir_mono'),
+                ('image', 'image_rect'),
+            ],
+        ))
+
+    # --- 2b) Rectify: colour only; IR is already rectified ------------------
     if not use_ir:
         nodes.append(ComposableNode(
             package='isaac_ros_image_proc',

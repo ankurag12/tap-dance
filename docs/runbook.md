@@ -147,8 +147,10 @@ ros2 launch tap_dance realsense_apriltag.launch.py sensor:=infra1 tag_size:=0.12
 ```
 
 Read `wand tag found N%` from `tap_localizer` for each while waving at game pace.
-The IR path drops RectifyNode (IR is factory rectified), so it is also one GPU
-node lighter.
+The IR path drops RectifyNode (IR is factory rectified) but adds an
+ImageFormatConverterNode, because cuAprilTags rejects mono8 — "only 'rgb8' or
+'bgr8' image input". Same node count; IR is worth it for the shutter, not for
+pipeline length.
 
 `exposure` is in MICROSECONDS for both sensors and converted internally --
 librealsense wants 100 us units for colour and microseconds for IR.
