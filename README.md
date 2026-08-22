@@ -59,29 +59,36 @@ across two clock domains.
 ## Run it
 
 ```bash
-# micro-ROS agent (host, persistent — different lifecycle from the ROS launch)
+# micro-ROS agent — persistent, on the host. Separate from the ROS launch on
+# purpose: the wand connects to it whenever it powers on, game or no game.
 docker run -d --restart unless-stopped --net=host \
   --name uros_agent microros/micro-ros-agent:humble udp4 --port 8888
 
 # firmware (needs include/secrets.h)
 cd firmware/m5stick_imu && pio run -t upload
+```
 
-# in the Isaac ROS container
-ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 width:=1280 height:=720
-ros2 run tap_dance tap_localizer
-ros2 run tap_dance tap_game --ros-args \
-  -p target_names:='["cup","pen"]' -p target_u:='[131.0, 866.0]'
+Then, in the Isaac ROS container, one command:
+
+```bash
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 \
+  target_names:='["cup","pen"]' target_u:='[600.0, 1000.0]'
 ```
 
 Or let YOLOv8 find and name the objects instead of measuring them:
 
 ```bash
-ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 use_yolo:=true
-ros2 run tap_dance tap_game --ros-args -p use_yolo:=true
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 use_yolo:=true
 ```
 
-`target_u` is each target's horizontal pixel position — measure once by tapping
-each object with `tap_localizer` running.
+`target_u` is each target's horizontal pixel position. Measure it once by hovering
+the wand over each object and reading `tag now at u=` from `tap_localizer`, and
+re-measure after changing `sensor:` — the imagers are physically offset, so the
+same object sits at a different column in each.
+
+Measurement and debugging tools (`tag_pose_stats`, `tap_detector`,
+`detection_probe`) stay separate from the game launch; see
+[`docs/runbook.md`](docs/runbook.md).
 
 ## Design decisions
 

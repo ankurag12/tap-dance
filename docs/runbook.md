@@ -43,98 +43,52 @@ cd /workspaces/isaac_ros-dev && colcon build --packages-up-to tap_dance && sourc
 
 ## 1. Play the game
 
-Three **container** shells.
+ONE terminal:
 
 ```bash
-# 1 — camera + AprilTag (defaults are the measured-best config:
-#     IR global shutter, 4 ms pinned exposure -> 100% detection in motion)
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 \
+  target_names:='["cup","pen"]' target_u:='[600.0, 1000.0]'
+```
+
+With YOLOv8 naming the objects instead of hand-measured positions:
+
+```bash
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 use_yolo:=true \
+  yolo_classes:='["cup","bottle","book"]'
+```
+
+This starts the camera, AprilTag, optionally YOLOv8/TensorRT, `tap_localizer` and
+`tap_game`. The camera and NITROS are logged at WARN so the prompts stay readable;
+add `quiet:=false` when debugging bring-up.
+
+The micro-ROS agent is NOT part of this launch — it is a persistent Docker
+container with its own lifecycle (see §0), since the wand connects to it whenever
+it powers on, game or no game.
+
+Common overrides:
+
+```bash
+  rounds:=10             time_limit:=6.0
+  sensor:=infra1         # global shutter; needs a near-IR source
+  exposure:=4000         # microseconds; raise in a dim room
+  gain:=248              # only the stereo module accepts this much
+  min_yolo_hits:=15      # detections before a class becomes a target
+  wand_tag_id:=-1        # -1 = whichever tag is in view
+```
+
+Deeper per-node parameters (`tap_lockout`, `max_halfwidth`, `max_uncertainty`,
+`max_stale`, `fresh_enough`) are not exposed by the launch; run the node directly
+with `ros2 run` to change them.
+
+## 2. Measure (standalone debugging tools)
+
+These are for answering questions, not for playing. Run them against a running
+`tap_game.launch.py`, or start the perception graph alone with:
+
+```bash
 ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225
-
-# 2 — cross-clock lookup (tap instant -> tag pixel position)
-ros2 run tap_dance tap_localizer
-
-# 3 — the game
-ros2 run tap_dance tap_game --ros-args \
-  -p target_names:='["cup","pen"]' -p target_u:='[131.0, 866.0]'
 ```
 
-### Measuring `target_u`
-
-`target_u` is each target's horizontal pixel position. Run `tap_localizer` with a
-short status period, hover the wand over each object in turn, and read
-`tag now at u=...` — no tapping needed:
-
-```bash
-ros2 run tap_dance tap_localizer --ros-args -p status_period:=1.0
-```
-
-If the tag is not currently visible the line says `tag NOT seen for N ms` rather
-than quoting a stale position.
-
-Note the direction: with the camera facing you, its right is YOUR left, so moving
-the wand to your left INCREASES `u`.
-
-**Re-measure whenever you change `sensor:`.** The IR and colour lenses are
-physically offset and have slightly different fields of view, so the same object
-sits at a different column in each.
-
-Measure the centres from actual TAPS, not from hovering. Taps land consistently
-right of a hovered position -- ~90 px in the measured setup -- because the wand
-tilts on contact and carries the tag with it.
-
-Two placement notes:
-
-- With N targets the boundary between two of them is the MIDPOINT of their `u`
-  values, so regions are only equal if the objects are spread evenly. A target
-  near the frame edge wastes half its region outside the image.
-- Keep objects well inside the frame. Near the edges the tag risks leaving view
-  entirely during the reach.
-
-### With YOLO naming the objects (M2)
-
-Instead of hand-measured positions, let YOLOv8 find the objects and use their real
-names. Two shells change:
-
-```bash
-# 1 — camera + AprilTag + YOLOv8/TensorRT, all in one container
-ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 use_yolo:=true
-```
-
-```bash
-# 3 — game takes targets from /detections_output
-ros2 run tap_dance tap_game --ros-args -p use_yolo:=true
-```
-
-The game waits until at least two whitelisted classes have been seen
-`min_yolo_hits` times, then announces them. Restrict or widen the whitelist with:
-
-```bash
-  -p yolo_classes:='["cup","bottle","book"]'
-  -p min_yolo_hits:=15        # detections before a class becomes a target
-```
-
-Requires `sensor:=color` (the default) — a COCO-trained model on grayscale IR is
-out of distribution, and the launch refuses the combination.
-
-Check what YOLO is seeing, with class names rather than numeric ids:
-
-```bash
-ros2 run tap_dance detection_probe --ros-args -p period:=2.0
-```
-
-Useful `tap_game` parameters:
-
-```bash
-  -p rounds:=10              # rounds per game
-  -p time_limit:=6.0         # seconds allowed per round
-  -p tap_lockout:=0.40       # ignore taps this soon after a scored one (bounce)
-  -p max_halfwidth:=400.0    # cap on per-target region half-width, px
-  -p max_uncertainty:=250.0  # absolute backstop on tap position uncertainty, px
-```
-
----
-
-## 2. Measure
 
 **Tag detection rate and pose latency** — the `wand tag found N%` line is the key
 health number. 100% in motion with the default IR + 4 ms config; drop to colour or

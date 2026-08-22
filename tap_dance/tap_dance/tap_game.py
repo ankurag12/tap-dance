@@ -63,6 +63,32 @@ class TapGame(Node):
     def __init__(self):
         super().__init__('tap_game')
 
+        # Targets come either from parameters (measured by hand) or from YOLO.
+        # YOLO only works because it runs on the SAME rectified image as
+        # AprilTag: rectification moves pixels, so a bbox centre and a tag centre
+        # are comparable only if both were measured in the rectified frame. That
+        # is what removes any need for depth, intrinsics or cross-sensor
+        # registration here.
+        self._use_yolo = self.declare_parameter('use_yolo', False).value
+        # Which COCO classes count as targets. Everything else -- people, chairs,
+        # the monitor -- is ignored rather than becoming a target.
+        self._yolo_classes = set(self.declare_parameter(
+            'yolo_classes',
+            ['cup', 'bottle', 'book', 'mouse', 'keyboard', 'cell phone',
+             'remote', 'scissors', 'banana', 'apple']).value)
+        # A class must be seen this many times before it becomes a target, so a
+        # single false positive cannot inject one mid-game.
+        self._min_yolo_hits = self.declare_parameter('min_yolo_hits', 15).value
+        self._yolo_smoothing = self.declare_parameter('yolo_smoothing', 0.2).value
+
+        # Cap exists only so a single isolated target cannot claim the whole
+        # image; with two or more targets the half-distance to the nearest
+        # neighbour is the natural boundary and regions should MEET. At 200 the
+        # cap bound instead, leaving a 335 px dead zone between targets 735 px
+        # apart, so taps 16 px outside a region scored as "between targets" even
+        # though the intended target was unambiguous.
+        self._max_hw = self.declare_parameter('max_halfwidth', 400.0).value
+
         names = list(self.declare_parameter(
             'target_names', ['left', 'mid_left', 'mid_right', 'right']).value)
         us = list(self.declare_parameter(
@@ -70,25 +96,12 @@ class TapGame(Node):
         if len(names) != len(us):
             raise ValueError(
                 f'target_names ({len(names)}) and target_u ({len(us)}) must match')
-        self._targets = list(zip(names, [float(u) for u in us]))
 
-        # Per-target tolerance = half the distance to that target's NEAREST
-        # NEIGHBOUR, capped by max_halfwidth. A single global halfwidth taken
-        # from the tightest pair would make every region as strict as the worst
-        # one -- an isolated target 450 px from anything else would still reject
-        # a tap 60 px off. Per-target keeps close pairs unambiguous while leaving
-        # isolated targets generous.
-        # Cap exists only so a single isolated target cannot claim the whole
-        # image; with two or more targets the half-distance to the nearest
-        # neighbour is the natural boundary and regions should MEET. At 200 the
-        # cap bound instead, leaving a 335 px dead zone between targets 735 px
-        # apart, so taps 16 px outside a region scored as "between targets" even
-        # though the intended target was unambiguous.
-        max_hw = self.declare_parameter('max_halfwidth', 400.0).value
+        self._seen = {}          # class name -> [hits, smoothed_u]
+        self._targets = []
         self._tolerance = {}
-        for i, (name, cu) in enumerate(self._targets):
-            others = [abs(cu - ou) for j, (_, ou) in enumerate(self._targets) if j != i]
-            self._tolerance[name] = min(max_hw, (min(others) / 2.0) if others else max_hw)
+        if not self._use_yolo:
+            self._set_targets(list(zip(names, [float(u) for u in us])))
 
         self._rounds = self.declare_parameter('rounds', 10).value
         self._time_limit = self.declare_parameter('time_limit', 6.0).value

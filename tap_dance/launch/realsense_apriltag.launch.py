@@ -269,6 +269,10 @@ def launch_setup(context, *args, **kwargs):
         executable='component_container_mt',
         composable_node_descriptions=nodes,
         output='screen',
+        # The camera and NITROS log heavily at INFO. When this graph runs under
+        # tap_game.launch.py that chatter buries the game's prompts, so the level
+        # is settable rather than fixed.
+        arguments=['--ros-args', '--log-level', arg('log_level')],
     )] + extra
 
 
@@ -306,6 +310,10 @@ def generate_launch_description():
                         'motion, so it is the default. Needs a well-lit scene -- '
                         'in a dim room a short exposure underexposes and detection '
                         'falls.'),
+        DeclareLaunchArgument(
+            'log_level', default_value='INFO',
+            description='Log level for the perception container. WARN hides the '
+                        'camera/NITROS startup chatter.'),
         DeclareLaunchArgument(
             'use_yolo', default_value='false',
             description='Also run YOLOv8/TensorRT on the rectified image, so the '
