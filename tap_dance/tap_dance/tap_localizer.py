@@ -121,6 +121,8 @@ class TapLocalizer(Node):
         self._n_wand_dets = 0
         self._ids_seen = set()
         self._status_period = self.declare_parameter('status_period', 5.0).value
+        # Beyond this the status line reports "not seen" instead of a position.
+        self._live_max_age = self.declare_parameter('live_max_age', 0.5).value
         self.create_timer(self._status_period, self._status)
         self.get_logger().info(
             f'wand tag id {self._wand_id if self._wand_id >= 0 else "(any)"}; '
@@ -154,6 +156,13 @@ class TapLocalizer(Node):
             age = self.get_clock().now().nanoseconds * 1e-9 - self._poses[-1][0]
             msg_hz = self._n_det_msgs / self._status_period
             wand_hz = self._n_wand_dets / self._status_period
+            # Only quote a live position if the sighting is actually current.
+            # Showing the last known u regardless would read as a valid reading
+            # while the tag is hidden -- misleading exactly when this line is
+            # being used to measure target positions.
+            live = (f'tag now at u={self._poses[-1][1]:.0f} '
+                    f'v={self._poses[-1][2]:.0f}' if age <= self._live_max_age
+                    else f'tag NOT seen for {age * 1000:.0f} ms')
             # msg_hz is the camera pipeline's rate; wand_hz is how often the tag
             # is actually FOUND. A big gap between them means the tag is being
             # missed -- too small, too oblique, or motion-blurred -- which is the
@@ -168,7 +177,7 @@ class TapLocalizer(Node):
                 f'inputs: detections {msg_hz:.0f} Hz, wand tag found '
                 f'{wand_hz:.0f} Hz ({100.0 * wand_hz / msg_hz if msg_hz else 0:.0f}% '
                 f'of frames), newest {age * 1000:.0f} ms old, ids {sorted(self._ids_seen)}'
-                f'  |  tag now at u={self._poses[-1][1]:.0f} v={self._poses[-1][2]:.0f}'
+                f'  |  {live}'
                 f'  |  taps {self._n_taps}, located {self._n_located} '
                 f'({self._n_interp} interp, {self._n_last} last-pose)')
         else:

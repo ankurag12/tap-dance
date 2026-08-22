@@ -60,9 +60,19 @@ ros2 run tap_dance tap_game --ros-args \
 
 ### Measuring `target_u`
 
-`target_u` is each target's horizontal pixel position. Run `tap_localizer`, hover
-the wand over each object in turn, and read `tag now at u=...` from its status
-line — no tapping needed.
+`target_u` is each target's horizontal pixel position. Run `tap_localizer` with a
+short status period, hover the wand over each object in turn, and read
+`tag now at u=...` — no tapping needed:
+
+```bash
+ros2 run tap_dance tap_localizer --ros-args -p status_period:=1.0
+```
+
+If the tag is not currently visible the line says `tag NOT seen for N ms` rather
+than quoting a stale position.
+
+Note the direction: with the camera facing you, its right is YOUR left, so moving
+the wand to your left INCREASES `u`.
 
 **Re-measure whenever you change `sensor:`.** The IR and colour lenses are
 physically offset and have slightly different fields of view, so the same object
