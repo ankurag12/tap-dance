@@ -68,8 +68,13 @@
 #   ros2 launch tap_dance realsense_apriltag.launch.py sensor:=infra1 width:=848 height:=480 fps:=60
 #   ros2 launch tap_dance realsense_apriltag.launch.py sensor:=infra1 auto_exposure:=false exposure:=8000
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 import launch
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
+                            OpaqueFunction)
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
@@ -191,6 +196,72 @@ def launch_setup(context, *args, **kwargs):
         ],
     ))
 
+    # --- 4) Optional: YOLOv8 via TensorRT, for naming the objects -----------
+    # Feeds from image_rect, the SAME image AprilTag consumes. That matters:
+    # rectification moves pixels (most at the edges), so a bbox centre and a tag
+    # centre are only comparable if both were measured in the rectified frame.
+    # This is why the game can match objects to taps with no depth, no
+    # intrinsics and no cross-sensor registration.
+    extra = []
+    if arg('use_yolo').lower() in ('true', '1', 'yes'):
+        if use_ir:
+            raise ValueError(
+                'use_yolo with sensor:=infra1 is not supported: the COCO-trained '
+                'model expects colour, and grayscale-widened-to-rgb8 is out of '
+                'distribution. Use sensor:=color.')
+
+        nodes.append(ComposableNode(
+            name='tensor_rt',
+            package='isaac_ros_tensor_rt',
+            plugin='nvidia::isaac_ros::dnn_inference::TensorRTNode',
+            namespace='',
+            parameters=[{
+                'engine_file_path': arg('engine_file_path'),
+                'input_tensor_names': ['input_tensor'],
+                # Binding names come from the Ultralytics ONNX export -- the
+                # classic gotcha, since the defaults do not match.
+                'input_binding_names': ['images'],
+                'output_tensor_names': ['output_tensor'],
+                'output_binding_names': ['output0'],
+                'verbose': False,
+                'force_engine_update': False,
+            }],
+        ))
+        nodes.append(ComposableNode(
+            name='yolov8_decoder_node',
+            package='isaac_ros_yolov8',
+            plugin='nvidia::isaac_ros::yolov8::YoloV8DecoderNode',
+            namespace='',
+            parameters=[{
+                'confidence_threshold': float(arg('confidence_threshold')),
+                'nms_threshold': float(arg('nms_threshold')),
+            }],
+        ))
+
+        # The encoder ships as its own launch file and can attach into an
+        # existing container, so the whole graph stays in one process and NITROS
+        # keeps the images on the GPU.
+        encoder_dir = get_package_share_directory('isaac_ros_dnn_image_encoder')
+        extra.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                [os.path.join(encoder_dir, 'launch', 'dnn_image_encoder.launch.py')]),
+            launch_arguments={
+                'input_image_width': str(width),
+                'input_image_height': str(height),
+                'network_image_width': '640',
+                'network_image_height': '640',
+                # The engine was exported without normalisation baked in.
+                'image_mean': '[0.0, 0.0, 0.0]',
+                'image_stddev': '[1.0, 1.0, 1.0]',
+                'attach_to_shared_component_container': 'True',
+                'component_container_name': 'apriltag_container',
+                'dnn_image_encoder_namespace': 'yolov8_encoder',
+                'image_input_topic': '/image_rect',
+                'camera_info_input_topic': '/camera_info_rect',
+                'tensor_output_topic': '/tensor_pub',
+            }.items(),
+        ))
+
     return [ComposableNodeContainer(
         package='rclcpp_components',
         name='apriltag_container',
@@ -198,7 +269,7 @@ def launch_setup(context, *args, **kwargs):
         executable='component_container_mt',
         composable_node_descriptions=nodes,
         output='screen',
-    )]
+    )] + extra
 
 
 def generate_launch_description():
@@ -235,6 +306,21 @@ def generate_launch_description():
                         'motion, so it is the default. Needs a well-lit scene -- '
                         'in a dim room a short exposure underexposes and detection '
                         'falls.'),
+        DeclareLaunchArgument(
+            'use_yolo', default_value='false',
+            description='Also run YOLOv8/TensorRT on the rectified image, so the '
+                        'game can name real objects instead of using '
+                        'hand-measured target positions. Colour only.'),
+        DeclareLaunchArgument(
+            'engine_file_path',
+            default_value='/workspaces/isaac_ros-dev/models/yolov8s.plan',
+            description='TensorRT engine built from the Ultralytics ONNX export.'),
+        DeclareLaunchArgument(
+            'confidence_threshold', default_value='0.35',
+            description='YOLOv8 detection confidence threshold.'),
+        DeclareLaunchArgument(
+            'nms_threshold', default_value='0.45',
+            description='YOLOv8 non-maximum-suppression IoU threshold.'),
         DeclareLaunchArgument(
             'gain', default_value='128',
             description='Sensor gain when auto_exposure:=false. The stereo module '

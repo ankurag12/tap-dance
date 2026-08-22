@@ -90,6 +90,38 @@ Two placement notes:
 - Keep objects well inside the frame. Near the edges the tag risks leaving view
   entirely during the reach.
 
+### With YOLO naming the objects (M2)
+
+Instead of hand-measured positions, let YOLOv8 find the objects and use their real
+names. Two shells change:
+
+```bash
+# 1 — camera + AprilTag + YOLOv8/TensorRT, all in one container
+ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 use_yolo:=true
+```
+
+```bash
+# 3 — game takes targets from /detections_output
+ros2 run tap_dance tap_game --ros-args -p use_yolo:=true
+```
+
+The game waits until at least two whitelisted classes have been seen
+`min_yolo_hits` times, then announces them. Restrict or widen the whitelist with:
+
+```bash
+  -p yolo_classes:='["cup","bottle","book"]'
+  -p min_yolo_hits:=15        # detections before a class becomes a target
+```
+
+Requires `sensor:=color` (the default) — a COCO-trained model on grayscale IR is
+out of distribution, and the launch refuses the combination.
+
+Check what YOLO is seeing, with class names rather than numeric ids:
+
+```bash
+ros2 run tap_dance detection_probe --ros-args -p period:=2.0
+```
+
 Useful `tap_game` parameters:
 
 ```bash

@@ -48,7 +48,10 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Header, String
 
+from vision_msgs.msg import Detection2DArray
+
 from isaac_ros_apriltag_interfaces.msg import AprilTagDetectionArray
+from tap_dance.detection_probe import class_name
 
 
 def stamp_to_sec(stamp):
@@ -113,6 +116,9 @@ class TapGame(Node):
             PointStamped, '/wand/tap_pixel', self._on_tap_pixel, 10)
         self.create_subscription(
             Header, '/wand/tap_unlocated', self._on_tap_unlocated, 10)
+        if self._use_yolo:
+            self.create_subscription(
+                Detection2DArray, '/detections_output', self._on_detections, qos)
         self._pub = self.create_publisher(String, '/game/status', 10)
 
         self._round = 0
@@ -131,10 +137,63 @@ class TapGame(Node):
         self.create_timer(0.1, self._report_hover)
         self._state = 'countdown'
         self._countdown_until = self._now() + self._start_delay
-        self._say('targets: ' + ',  '.join(
-            f'{n}@{int(u)}+/-{self._tolerance[n]:.0f}' for n, u in self._targets)
-            + f'  |  rejecting taps uncertain beyond {self._max_uncertainty:.0f} px'
-            + f'  |  starting in {self._start_delay:.0f} s')
+        if self._use_yolo:
+            self._say(f'waiting for YOLO to find at least 2 of '
+                      f'{sorted(self._yolo_classes)} '
+                      f'({self._min_yolo_hits} detections each)  |  rejecting taps '
+                      f'uncertain beyond {self._max_uncertainty:.0f} px')
+        else:
+            self._say('targets: ' + ',  '.join(
+                f'{n}@{int(u)}+/-{self._tolerance[n]:.0f}' for n, u in self._targets)
+                + f'  |  rejecting taps uncertain beyond {self._max_uncertainty:.0f} px'
+                + f'  |  starting in {self._start_delay:.0f} s')
+
+    def _set_targets(self, targets):
+        """Install a target list and recompute per-target tolerances.
+
+        Tolerance is half the distance to that target's NEAREST NEIGHBOUR, capped
+        by max_halfwidth. A single global halfwidth taken from the tightest pair
+        would make every region as strict as the worst one -- an isolated target
+        450 px from anything else would still reject a tap 60 px off. Recomputed
+        on every change because with YOLO the target set is discovered at runtime.
+        """
+        self._targets = sorted(targets, key=lambda t: t[1])
+        self._tolerance = {}
+        for i, (name, cu) in enumerate(self._targets):
+            others = [abs(cu - ou) for j, (_, ou) in enumerate(self._targets) if j != i]
+            self._tolerance[name] = min(
+                self._max_hw, (min(others) / 2.0) if others else self._max_hw)
+
+    def _on_detections(self, msg):
+        """Build the target list from YOLO: class name + bbox centre column."""
+        if not self._use_yolo:
+            return
+        changed = False
+        for det in msg.detections:
+            if not det.results:
+                continue
+            name = class_name(det.results[0].hypothesis.class_id)
+            if name not in self._yolo_classes:
+                continue
+            u = det.bbox.center.position.x
+            entry = self._seen.get(name)
+            if entry is None:
+                self._seen[name] = [1, u]
+            else:
+                entry[0] += 1
+                a = self._yolo_smoothing
+                entry[1] = (1.0 - a) * entry[1] + a * u
+                if entry[0] == self._min_yolo_hits:
+                    changed = True
+
+        stable = [(n, v[1]) for n, v in self._seen.items()
+                  if v[0] >= self._min_yolo_hits]
+        # Only reinstall when the SET changes; the smoothed positions keep moving
+        # and rebuilding tolerances every frame would be pointless churn.
+        if changed or {n for n, _ in self._targets} != {n for n, _ in stable}:
+            self._set_targets(stable)
+            self._say('targets from YOLO: ' + ',  '.join(
+                f'{n}@{int(u)}+/-{self._tolerance[n]:.0f}' for n, u in self._targets))
 
     def _now(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -142,6 +201,12 @@ class TapGame(Node):
     def _say(self, text):
         self.get_logger().info(text)
         self._pub.publish(String(data=text))
+
+    def _say_throttled(self, text, period):
+        now = self._now()
+        if now - getattr(self, '_last_throttled_t', 0.0) >= period:
+            self._last_throttled_t = now
+            self._say(text)
 
     def _match(self, u):
         """Nearest target whose own tolerance contains u, or None."""
@@ -272,6 +337,16 @@ class TapGame(Node):
         now = self._now()
 
         if self._state == 'countdown':
+            # With YOLO the target set is discovered at runtime, so hold the
+            # countdown until at least two targets exist -- a one-target game has
+            # nothing to choose between, and an empty one has nothing at all.
+            if len(self._targets) < 2:
+                self._countdown_until = now + self._start_delay
+                if self._use_yolo:
+                    self._say_throttled(
+                        f'still waiting: {len(self._targets)} target(s) found',
+                        period=3.0)
+                return
             if now >= self._countdown_until:
                 self._next_round()
 
@@ -285,6 +360,14 @@ class TapGame(Node):
         if self._round >= self._rounds:
             self._summary()
             self._state = 'done'
+            return
+
+        if len(self._targets) < 2:
+            # Targets vanished mid-game (YOLO lost them). Fall back to waiting
+            # rather than crashing on an empty choice.
+            self._state = 'countdown'
+            self._countdown_until = self._now() + self._start_delay
+            self._say('lost targets — waiting for at least 2 again')
             return
 
         self._round += 1

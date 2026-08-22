@@ -73,6 +73,13 @@ ros2 run tap_dance tap_game --ros-args \
   -p target_names:='["cup","pen"]' -p target_u:='[131.0, 866.0]'
 ```
 
+Or let YOLOv8 find and name the objects instead of measuring them:
+
+```bash
+ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 use_yolo:=true
+ros2 run tap_dance tap_game --ros-args -p use_yolo:=true
+```
+
 `target_u` is each target's horizontal pixel position — measure once by tapping
 each object with `tap_localizer` running.
 
@@ -132,8 +139,11 @@ stay off, so the IR imagers run passive and need an actual near-IR source.
 Daylight through a window is enough; LED room lighting is not, and an IR
 illuminator or a halogen lamp would be the fix for evening use.
 
-Next: replace hand-configured target positions with **TensorRT YOLOv8** detections
-so the game names real objects with no setup.
+YOLOv8 target detection is wired in (`use_yolo:=true`): the TensorRT engine runs
+in the same container on the same rectified image AprilTag uses, so bbox centres
+and tag centres are directly comparable — no depth, no intrinsics, no cross-sensor
+registration. Objects are accepted as targets after a stability threshold so a
+single false positive cannot inject one mid-game.
 
 Scope and milestones: [`docs/capstone-tap-game.md`](docs/capstone-tap-game.md).
 Every command for running and debugging: [`docs/runbook.md`](docs/runbook.md).
