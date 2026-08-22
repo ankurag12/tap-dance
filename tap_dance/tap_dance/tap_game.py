@@ -81,6 +81,28 @@ class TapGame(Node):
         self._min_yolo_hits = self.declare_parameter('min_yolo_hits', 15).value
         self._yolo_smoothing = self.declare_parameter('yolo_smoothing', 0.2).value
 
+        # YOLOv8 bboxes arrive in the NETWORK's pixel space, not the image's.
+        # YoloV8DecoderNode takes only tensor_name/thresholds/num_classes -- it is
+        # never told the original image size -- so it emits raw network
+        # coordinates. Meanwhile AprilTag reports the tag in full image
+        # coordinates, so comparing them directly is wrong by the encoder's
+        # resize factor.
+        #
+        # The encoder (dnn_image_encoder.launch.py, defaults enable_padding=True,
+        # keep_aspect_ratio=True, crop_mode=CENTER) scales the image uniformly by
+        # s = min(net_w/img_w, net_h/img_h) into the top-left of the tensor and
+        # pads the remainder; the crop then becomes a no-op. So the inverse is a
+        # pure scale with no offset:  u_image = u_network / s.
+        #
+        # For 1280x720 into 640x640, s = 0.5, so YOLO's u must be DOUBLED.
+        # Measured before the fix: apple reported at u=143 while the tag hovering
+        # over it read 290; cup at 427 against a tag reading ~858.
+        img_w = float(self.declare_parameter('image_width', 1280).value)
+        img_h = float(self.declare_parameter('image_height', 720).value)
+        net_w = float(self.declare_parameter('network_width', 640).value)
+        net_h = float(self.declare_parameter('network_height', 640).value)
+        self._yolo_scale = 1.0 / min(net_w / img_w, net_h / img_h)
+
         # Cap exists only so a single isolated target cannot claim the whole
         # image; with two or more targets the half-distance to the nearest
         # neighbour is the natural boundary and regions should MEET. At 200 the
@@ -153,8 +175,9 @@ class TapGame(Node):
         if self._use_yolo:
             self._say(f'waiting for YOLO to find at least 2 of '
                       f'{sorted(self._yolo_classes)} '
-                      f'({self._min_yolo_hits} detections each)  |  rejecting taps '
-                      f'uncertain beyond {self._max_uncertainty:.0f} px')
+                      f'({self._min_yolo_hits} detections each)  |  scaling YOLO '
+                      f'bboxes by {self._yolo_scale:.3f} into image pixels  |  '
+                      f'rejecting taps uncertain beyond {self._max_uncertainty:.0f} px')
         else:
             self._say('targets: ' + ',  '.join(
                 f'{n}@{int(u)}+/-{self._tolerance[n]:.0f}' for n, u in self._targets)
@@ -188,7 +211,7 @@ class TapGame(Node):
             name = class_name(det.results[0].hypothesis.class_id)
             if name not in self._yolo_classes:
                 continue
-            u = det.bbox.center.position.x
+            u = det.bbox.center.position.x * self._yolo_scale
             entry = self._seen.get(name)
             if entry is None:
                 self._seen[name] = [1, u]

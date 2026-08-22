@@ -180,6 +180,14 @@ class TapLocalizer(Node):
                 f'  |  {live}'
                 f'  |  taps {self._n_taps}, located {self._n_located} '
                 f'({self._n_interp} interp, {self._n_last} last-pose)')
+            # A spurious detection (id 211 was seen once in a cluttered scene at
+            # short exposure) is indistinguishable from the wand when any tag is
+            # accepted, and the localizer would silently track it instead.
+            if self._wand_id < 0 and len(self._ids_seen) > 1:
+                self.get_logger().warn(
+                    f'{len(self._ids_seen)} tag ids seen {sorted(self._ids_seen)} '
+                    'but wand_tag_id is -1 (any), so the wrong tag may be tracked '
+                    '— pin it with wand_tag_id:=<id>')
         else:
             self.get_logger().warn(
                 f'inputs: NO poses buffered after {self._n_det_msgs} detection '

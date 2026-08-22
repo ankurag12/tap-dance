@@ -87,6 +87,12 @@ def launch_setup(context, *args, **kwargs):
     if use_yolo:
         game_params['yolo_classes'] = as_list('yolo_classes')
         game_params['min_yolo_hits'] = int(arg('min_yolo_hits'))
+        # tap_game has to undo the encoder's resize itself, because the YOLOv8
+        # decoder emits bboxes in network pixels and is never told the image size.
+        game_params['image_width'] = int(arg('width'))
+        game_params['image_height'] = int(arg('height'))
+        game_params['network_width'] = 640
+        game_params['network_height'] = 640
     else:
         game_params['target_names'] = [str(n) for n in as_list('target_names')]
         game_params['target_u'] = [float(u) for u in as_list('target_u')]
