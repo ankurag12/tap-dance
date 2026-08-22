@@ -78,6 +78,10 @@ the wand to your left INCREASES `u`.
 physically offset and have slightly different fields of view, so the same object
 sits at a different column in each.
 
+Measure the centres from actual TAPS, not from hovering. Taps land consistently
+right of a hovered position -- ~90 px in the measured setup -- because the wand
+tilts on contact and carries the tag with it.
+
 Two placement notes:
 
 - With N targets the boundary between two of them is the MIDPOINT of their `u`

@@ -110,10 +110,18 @@ each message is a game event and a loss means the hit does not register.
 | Tag detection in motion — IR, auto exposure | 50% (AE picks a long exposure) |
 | **Tag detection in motion — IR, 4 ms pinned** | **100%** (needs an IR light source) |
 | Tap → score latency | ~75 ms, from ~330 ms |
+| **Game result** | **10/10 hits, 0 unlocalizable, median reaction 868 ms** |
 
 ## Status
 
-Playable, and the tag-visibility problem is solved: detection in motion went from
+Working end to end: 10/10 hits with no unlocalizable taps and a median reaction
+time of 868 ms. Getting there took four measured fixes -- cutting a needless
+300 ms wait in the tap lookup, loosening the staleness bound once it was clear
+only horizontal position mattered, adding a game-level lockout so a tap's
+follow-through stopped scoring the next round, and moving AprilTag to the IR
+imager with a pinned exposure.
+
+The tag-visibility problem is solved: detection in motion went from
 ~50% to 100% by moving AprilTag onto the D456's global-shutter IR imager with a
 pinned 4 ms exposure. Two effects were masking each other — a rolling shutter
 shears a moving tag (which exposure cannot fix), while IR auto-exposure picks a
