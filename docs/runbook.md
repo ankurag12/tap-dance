@@ -58,8 +58,23 @@ ros2 run tap_dance tap_game --ros-args \
   -p target_names:='["cup","pen"]' -p target_u:='[131.0, 866.0]'
 ```
 
-`target_u` = each target's horizontal pixel position. Measure once by tapping each
-object with `tap_localizer` running and reading the `u=` values.
+### Measuring `target_u`
+
+`target_u` is each target's horizontal pixel position. Run `tap_localizer`, hover
+the wand over each object in turn, and read `tag now at u=...` from its status
+line — no tapping needed.
+
+**Re-measure whenever you change `sensor:`.** The IR and colour lenses are
+physically offset and have slightly different fields of view, so the same object
+sits at a different column in each.
+
+Two placement notes:
+
+- With N targets the boundary between two of them is the MIDPOINT of their `u`
+  values, so regions are only equal if the objects are spread evenly. A target
+  near the frame edge wastes half its region outside the image.
+- Keep objects well inside the frame. Near the edges the tag risks leaving view
+  entirely during the reach.
 
 Useful `tap_game` parameters:
 
@@ -118,6 +133,14 @@ Detection in motion, waving at game pace:
 | colour | ~4 ms | 50–70% |
 | IR | auto | 50% (dim ambient IR -> AE picks a long exposure) |
 | **IR** | **2–4 ms** | **100%** |
+
+**IR needs an IR light source.** 100% was measured with daylight through an open
+window. The projector must stay off (its dots cover the tag), so the imagers run
+passive, and ambient near-IR indoors is scarce — LED lighting emits almost none.
+At night, expect the IR image to darken and detection to fall. Options, best
+first: a cheap IR illuminator/floodlight aimed at the play area; an incandescent
+or halogen lamp (rich in near-IR, unlike LED); a longer exposure (trades blur
+back in); or fall back to `sensor:=color`.
 
 Both effects are real and each masked the other: exposure causes blur, and the
 colour imager's rolling shutter shears a moving tag regardless of exposure. The

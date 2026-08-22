@@ -158,10 +158,17 @@ class TapLocalizer(Node):
             # is actually FOUND. A big gap between them means the tag is being
             # missed -- too small, too oblique, or motion-blurred -- which is the
             # real limit on how well any tap can be localized.
+            # Report the tag's CURRENT pixel position too: target_u values for
+            # tap_game are measured by hovering the wand over each object, and
+            # having to tap repeatedly just to read a column is needless. They
+            # also have to be re-measured whenever the imager changes -- the IR
+            # and colour lenses are physically offset, so the same object sits at
+            # a different column in each.
             self.get_logger().info(
                 f'inputs: detections {msg_hz:.0f} Hz, wand tag found '
                 f'{wand_hz:.0f} Hz ({100.0 * wand_hz / msg_hz if msg_hz else 0:.0f}% '
                 f'of frames), newest {age * 1000:.0f} ms old, ids {sorted(self._ids_seen)}'
+                f'  |  tag now at u={self._poses[-1][1]:.0f} v={self._poses[-1][2]:.0f}'
                 f'  |  taps {self._n_taps}, located {self._n_located} '
                 f'({self._n_interp} interp, {self._n_last} last-pose)')
         else:

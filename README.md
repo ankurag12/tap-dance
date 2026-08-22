@@ -108,7 +108,7 @@ each message is a game event and a loss means the hit does not register.
 | Tag detection, wand stationary | 97–100% of frames |
 | Tag detection in motion — colour, auto exposure | 38–70% |
 | Tag detection in motion — IR, auto exposure | 50% (AE picks a long exposure) |
-| **Tag detection in motion — IR, 4 ms pinned** | **100%** |
+| **Tag detection in motion — IR, 4 ms pinned** | **100%** (needs an IR light source) |
 | Tap → score latency | ~75 ms, from ~330 ms |
 
 ## Status
@@ -118,6 +118,11 @@ Playable, and the tag-visibility problem is solved: detection in motion went fro
 pinned 4 ms exposure. Two effects were masking each other — a rolling shutter
 shears a moving tag (which exposure cannot fix), while IR auto-exposure picks a
 long, blurring exposure because ambient near-IR is dim with the projector off.
+
+That last point is also the configuration's main constraint: the projector has to
+stay off, so the IR imagers run passive and need an actual near-IR source.
+Daylight through a window is enough; LED room lighting is not, and an IR
+illuminator or a halogen lamp would be the fix for evening use.
 
 Next: replace hand-configured target positions with **TensorRT YOLOv8** detections
 so the game names real objects with no setup.
