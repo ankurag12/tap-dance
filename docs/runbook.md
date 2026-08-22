@@ -46,8 +46,9 @@ cd /workspaces/isaac_ros-dev && colcon build --packages-up-to tap_dance && sourc
 Three **container** shells.
 
 ```bash
-# 1 — camera + AprilTag
-ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225 width:=1280 height:=720
+# 1 — camera + AprilTag (defaults are the measured-best config:
+#     IR global shutter, 4 ms pinned exposure -> 100% detection in motion)
+ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225
 
 # 2 — cross-clock lookup (tap instant -> tag pixel position)
 ros2 run tap_dance tap_localizer
@@ -75,7 +76,8 @@ Useful `tap_game` parameters:
 ## 2. Measure
 
 **Tag detection rate and pose latency** — the `wand tag found N%` line is the key
-health number. 100% stationary, ~50% in motion as of the last measurement.
+health number. 100% in motion with the default IR + 4 ms config; drop to colour or
+to auto-exposure and it falls to 38–70%.
 
 ```bash
 ros2 run tap_dance tap_localizer
@@ -106,10 +108,20 @@ ros2 topic list | grep -E "tap|m5stick|infra|color"
 
 ---
 
-## 3. Exposure / motion blur
+## 3. Exposure / motion blur — SOLVED, kept for reference
 
-Detection is 100% stationary but ~50% in motion. Exposure controls blur; the
-colour imager is rolling shutter, so shear may dominate (see §4).
+Detection in motion, waving at game pace:
+
+| Sensor | Exposure | Found % |
+|---|---|---|
+| colour | auto | 38–70% |
+| colour | ~4 ms | 50–70% |
+| IR | auto | 50% (dim ambient IR -> AE picks a long exposure) |
+| **IR** | **2–4 ms** | **100%** |
+
+Both effects are real and each masked the other: exposure causes blur, and the
+colour imager's rolling shutter shears a moving tag regardless of exposure. The
+launch defaults are now IR at 4 ms.
 
 ```bash
 # baseline: auto-exposure

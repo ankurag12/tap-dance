@@ -105,15 +105,19 @@ each message is a game event and a loss means the hit does not register.
 | Packet loss after decimation | 0 — 485/5 sampled = 97 Hz received |
 | Tap vs. hard-swing separation | peak 100–120 vs 40–75 m/s² → threshold 90 |
 | AprilTag out-of-plane jitter | 1.9–5.7° (12 cm tag), 5.7–11.3° (6 cm) |
-| Tag detection, wand stationary | 97–99% of frames |
-| Tag detection, wand in motion | 59–77% ← current limiting factor |
+| Tag detection, wand stationary | 97–100% of frames |
+| Tag detection in motion — colour, auto exposure | 38–70% |
+| Tag detection in motion — IR, auto exposure | 50% (AE picks a long exposure) |
+| **Tag detection in motion — IR, 4 ms pinned** | **100%** |
 | Tap → score latency | ~75 ms, from ~330 ms |
 
 ## Status
 
-Playable. Open problem: tag visibility at contact — detection is 97–99% when the
-wand is still but drops in motion, so some taps are detected by the IMU yet cannot
-be placed by the camera. Those are reported to the player, not silently dropped.
+Playable, and the tag-visibility problem is solved: detection in motion went from
+~50% to 100% by moving AprilTag onto the D456's global-shutter IR imager with a
+pinned 4 ms exposure. Two effects were masking each other — a rolling shutter
+shears a moving tag (which exposure cannot fix), while IR auto-exposure picks a
+long, blurring exposure because ambient near-IR is dim with the projector off.
 
 Next: replace hand-configured target positions with **TensorRT YOLOv8** detections
 so the game names real objects with no setup.

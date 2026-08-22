@@ -9,6 +9,17 @@
 # Nodes run as composable nodes in one container process, so Isaac ROS's NITROS
 # transport passes images between them on the GPU with zero copies.
 #
+# MEASURED (found % of frames with the tag, while waving at game pace):
+#   colour, auto exposure      38-70%   (varies a lot run to run)
+#   colour, ~4 ms              50-70%
+#   IR, auto exposure          50%      <- AE picks a LONG exposure: ambient
+#                                          near-IR is dim with the emitter off
+#   IR, 2-4 ms pinned          100%     <- the default configuration here
+#
+# Two independent effects, each of which was masking the other: exposure (blur)
+# and shutter type (shear). IR only wins once its exposure is pinned short, and
+# colour never reaches 100% even at a comparable exposure.
+#
 # WHY THE IR OPTION EXISTS
 # The D456's colour imager is ROLLING SHUTTER; its left/right IR imagers are
 # GLOBAL SHUTTER. A rolling shutter reads rows sequentially, so a moving tag is
@@ -188,9 +199,9 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     args = [
         DeclareLaunchArgument(
-            'sensor', default_value='color',
-            description="'color' (rolling shutter, needs rectify) or 'infra1' "
-                        '(global shutter, factory rectified, mono8).'),
+            'sensor', default_value='infra1',
+            description="'infra1' (global shutter; the measured-best path) or "
+                        "'color' (rolling shutter, needs rectify)."),
         DeclareLaunchArgument(
             'width', default_value='1280',
             description='Image width (px). 1080p OOMs the rectify GPU pool.'),
@@ -206,16 +217,20 @@ def generate_launch_description():
             description='AprilTag black-square edge length in meters. Must match '
                         'the tag in view or the reported pose distance is wrong.'),
         DeclareLaunchArgument(
-            'auto_exposure', default_value='true',
-            description='Set false to pin exposure/gain and stop auto-exposure '
-                        'choosing a motion-blurring exposure.'),
+            'auto_exposure', default_value='false',
+            description='Defaults OFF: on the IR imager, auto-exposure sees dim '
+                        'ambient near-IR and picks a long, motion-blurring '
+                        'exposure. Pinning it took detection 50% -> 100%.'),
         DeclareLaunchArgument(
-            'exposure', default_value='8000',
+            'exposure', default_value='4000',
             description='Exposure in MICROSECONDS when auto_exposure:=false; '
-                        'converted per sensor (see the note at the top).'),
+                        'converted per sensor (see the note at the top). 4 ms and '
+                        '2 ms both measured 100% in motion; 4 ms keeps more light '
+                        'margin, 2 ms freezes faster motion.'),
         DeclareLaunchArgument(
-            'gain', default_value='128',
-            description='Sensor gain when auto_exposure:=false. Raise to offset a '
-                        'short exposure, at the cost of noise.'),
+            'gain', default_value='248',
+            description='Sensor gain when auto_exposure:=false, near max for the '
+                        'stereo module. Needed to offset a 4 ms exposure under '
+                        'ambient IR only; costs noise.'),
     ]
     return launch.LaunchDescription(args + [OpaqueFunction(function=launch_setup)])
