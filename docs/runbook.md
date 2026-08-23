@@ -267,8 +267,20 @@ Serial prints `samples/s:` (expect ~485) and one line per tap. The LCD shows the
 tap count and `sync` / `NOSYNC` — `NOSYNC` means timestamps are not in the
 Jetson's epoch and the whole cross-clock premise is broken.
 
-Tuning lives in `src/main.cpp`: `TAP_THRESHOLD` (90 m/s²),
+Tuning lives in `src/main.cpp`: `TAP_THRESHOLD` (70 m/s²),
 `TAP_REFRACTORY_MS` (100), `SAMPLE_PERIOD_NS` (2 ms = 500 Hz).
+
+**Tap feels too heavy or too twitchy?** Lower or raise `TAP_THRESHOLD` and reflash.
+Measured on this wand: firm taps peak 100–120, hard swing *stops* 40–75. 70 dips
+into the top of the swing range on purpose so light taps register — a stray trigger
+still has to clear three game-side guards (taps only count during a round, a 400 ms
+lockout follows each scored tap, and positionally ambiguous taps are rejected).
+Watch the serial output while tapping to pick a value from real peaks:
+
+```
+TAP #4  onset 82.3 m/s^2
+   tap #4 peak 104.7
+```
 
 ---
 

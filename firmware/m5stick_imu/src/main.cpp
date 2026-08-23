@@ -62,11 +62,19 @@ static char tap_frame_id[] = "wand_tap";
 // direction changes as the wand rotates, so a per-axis threshold would depend
 // on how you hold it; the magnitude deviation is orientation-independent.
 //
-// 90 m/s^2 sits in the gap measured with this wand: hard swing stops peaked at
-// 40-75, taps at 100-120. (Taps clip at the +-8G rail, so their true peaks are
-// higher — harmless, since we only need separation.) Re-measure with
-// `ros2 run jetson_bringup tap_detector` if the wand or objects change.
-static const float TAP_THRESHOLD = 90.0f;            // m/s^2
+// Measured with this wand: firm taps peak at 100-120, hard swing STOPS at 40-75.
+// (Taps clip at the +-8G rail, so their true peaks are higher -- harmless, since
+// only the separation matters.) 90 sat safely in that gap but demanded a firm tap.
+//
+// 70 deliberately dips into the top of the swing range so lighter taps register.
+// That is acceptable because a stray trigger has to clear three game-side guards
+// before it can score: taps only count during an active round, a 400 ms lockout
+// follows every scored tap, and a tap whose position could belong to more than one
+// target is rejected outright. Lower it further if taps still feel heavy -- the
+// firmware prints every onset and peak over serial, so tune against real numbers
+// rather than guessing, and re-measure with `ros2 run tap_dance tap_detector` if
+// the wand or the objects change.
+static const float TAP_THRESHOLD = 70.0f;            // m/s^2
 
 // One physical tap rings across several samples. The lockout collapses those
 // into one event; it also sets the fastest resolvable multi-tap, so it must
