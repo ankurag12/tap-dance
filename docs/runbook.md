@@ -74,6 +74,10 @@ Common overrides:
   gain:=248              # only the stereo module accepts this much
   min_yolo_hits:=15      # detections before a class becomes a target
   wand_tag_id:=-1        # -1 = whichever tag is in view
+  verbose:=true          # log hover changes and rejected taps
+  gamma:=3.0             # brighter overlay (display only)
+  overlay_rate:=15.0     # overlay Hz; Python/cv2, keep it low
+  use_overlay:=false     # skip the overlay entirely
 ```
 
 Deeper per-node parameters (`tap_lockout`, `outer_margin`, `max_uncertainty`,
