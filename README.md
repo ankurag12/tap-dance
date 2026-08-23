@@ -52,7 +52,7 @@ Runtime — `tap_dance/`:
 |---|---|
 | `tap_localizer` | Cross-clock lookup: interpolates the tag's pixel position to the tap instant |
 | `tap_game` | Round loop, target matching, reaction-time scoring |
-| `targets` | Shared library: YOLO→image scaling, target discovery, tolerances, matching |
+| `targets` | Shared library: YOLO→image scaling, target discovery, region bounds, matching |
 | `sensor_monitor` | `diagnostic_updater` health checks on camera + IMU topics |
 
 Debug tools — `tap_dance/debug/`:

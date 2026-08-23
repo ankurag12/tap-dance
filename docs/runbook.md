@@ -76,7 +76,7 @@ Common overrides:
   wand_tag_id:=-1        # -1 = whichever tag is in view
 ```
 
-Deeper per-node parameters (`tap_lockout`, `max_halfwidth`, `max_uncertainty`,
+Deeper per-node parameters (`tap_lockout`, `outer_margin`, `max_uncertainty`,
 `max_stale`, `fresh_enough`) are not exposed by the launch; run the node directly
 with `ros2 run` to change them.
 
@@ -103,19 +103,19 @@ ros2 run tap_dance hover_probe --ros-args \
 
 ```
   objects (only classes that can become targets):
-      name              u(img)   u(net)  tol +/-   hits  score
-      apple              286.0    143.0       73    120  0.71
-      banana             432.0    216.0       73    118  0.66
-      cup                854.0    427.0      211    140  0.83
+      name              u(img)   u(net)      owns cols   hits  score
+      apple              286.0    143.0    -114.. 359     120  0.71
+      banana             432.0    216.0     359.. 643     118  0.66
+      cup                854.0    427.0     643..1254     140  0.83
   tag: u=  290.4 v=  241.0  ->  OVER APPLE
        offsets  apple:+4   banana:-142(out)   cup:-564(out)
 ```
 
 `u(img)` vs `u(net)` are both shown because a wrong scale is otherwise invisible —
-it just looks like the tag being over the wrong object. `tol` is half the distance
-to that target's nearest neighbour, so objects placed close together get narrow
-regions. `offsets` distinguishes a near-miss (nudge an object) from being nowhere
-near (re-measure).
+it just looks like the tag being over the wrong object. `owns cols` is the column
+interval that target claims; adjacent intervals MEET at the midpoint between two
+targets, so there is no dead band, and only the outermost edges are bounded (by
+`outer_margin`). `offsets` distinguishes a near-miss from being nowhere near.
 
 **Tag detection rate and pose latency** — the `wand tag found N%` line is the key
 health number. 100% in motion with the default IR + 4 ms config; drop to colour or
