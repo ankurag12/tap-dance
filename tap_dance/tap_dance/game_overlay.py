@@ -15,9 +15,18 @@
 # WHY BRIGHTEN HERE
 # The camera exposure is pinned to ~2 ms because that is what stops the tag
 # blurring during the reach, and a 2 ms frame looks dark. Rather than compromise
-# the detector for the sake of the picture, expose for the DETECTOR and brighten for
-# the VIEWER: this node applies a display-only gamma curve to its own copy. The
-# detector never sees it.
+# the detector for the sake of the picture, expose for the DETECTOR and grade for
+# the VIEWER: this node processes its own copy and the detector never sees it.
+#
+# Three stages, because gamma alone looks washed out -- it lifts midtones by
+# flattening the tone curve, which costs contrast and desaturates colour:
+#   1. gamma      global lift, so the frame is not simply dark
+#   2. CLAHE      adaptive local contrast on L, which is what restores "punch"
+#                 without crushing the highlights a global stretch would
+#   3. chroma     scale a/b away from neutral, since a short exposure lands in the
+#                 low-saturation part of the sensor's response
+# Stages 2 and 3 share one BGR->LAB->BGR round trip: CLAHE acts on L while
+# saturation is just a scale on a and b, so there is no separate HSV conversion.
 #
 # WHAT IS DELIBERATELY NOT DRAWN
 # No detection boxes, no tracked-tag marker. Showing them would tell the player
@@ -53,9 +62,19 @@ class GameOverlay(Node):
         self._width = self.declare_parameter('output_width', 960).value
         # >1 brightens midtones without clipping highlights, which is what a
         # short-exposure frame needs; a plain gain multiply would blow out the
-        # bright areas first.
-        self._gamma = self.declare_parameter('gamma', 2.2).value
+        # bright areas first. Lower than it once was because CLAHE now carries part
+        # of the lift, and stacking both over-brightened.
+        self._gamma = self.declare_parameter('gamma', 1.8).value
+        # CLAHE clip limit. 0 disables it. Higher is punchier and noisier -- the
+        # limit is what stops it amplifying sensor noise in flat regions, which is
+        # exactly the failure mode of plain histogram equalisation on a dark frame.
+        self._clahe_clip = self.declare_parameter('contrast', 2.0).value
+        # Chroma scale about neutral. 1.0 leaves colour alone.
+        self._saturation = self.declare_parameter('saturation', 1.4).value
 
+        self._clahe = (cv2.createCLAHE(clipLimit=self._clahe_clip,
+                                       tileGridSize=(8, 8))
+                       if self._clahe_clip > 0 else None)
         self._bridge = CvBridge()
         self._frame = None
         self._hud = ''
@@ -68,8 +87,9 @@ class GameOverlay(Node):
 
         self.create_timer(1.0 / self._rate, self._render)
         self.get_logger().info(
-            f'{image_topic} -> /game/overlay at {self._rate:.0f} Hz, '
-            f'{self._width} px wide, display gamma {self._gamma:.1f}')
+            f'{image_topic} -> /game/overlay at {self._rate:.0f} Hz, {self._width} '
+            f'px wide  |  display grading: gamma {self._gamma:.1f}, contrast '
+            f'{self._clahe_clip:.1f}, saturation {self._saturation:.1f}')
 
     @staticmethod
     def _build_lut(gamma):
@@ -78,6 +98,25 @@ class GameOverlay(Node):
         inv = 1.0 / max(gamma, 0.01)
         return np.array([((i / 255.0) ** inv) * 255 for i in range(256)],
                         dtype=np.uint8)
+
+    def _grade(self, img):
+        """Display-only grading: gamma lift, local contrast, chroma boost."""
+        img = cv2.LUT(img, self._lut)
+        if self._clahe is None and self._saturation == 1.0:
+            return img
+
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        if self._clahe is not None:
+            lab[:, :, 0] = self._clahe.apply(lab[:, :, 0])
+        if self._saturation != 1.0:
+            # a and b are signed chroma stored offset by 128, so scaling about 128
+            # pushes colours away from neutral grey. int16 first: uint8 would wrap
+            # instead of clipping on the way out.
+            for ch in (1, 2):
+                v = lab[:, :, ch].astype(np.int16)
+                lab[:, :, ch] = np.clip((v - 128) * self._saturation + 128,
+                                        0, 255).astype(np.uint8)
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
     def _on_image(self, msg):
         # Keep only the newest frame; the render timer decides when to use one, so
@@ -101,7 +140,7 @@ class GameOverlay(Node):
         if w != self._width:
             img = cv2.resize(img, (self._width, int(h * self._width / w)),
                              interpolation=cv2.INTER_AREA)
-        img = cv2.LUT(img, self._lut)
+        img = self._grade(img)
 
         if self._hud:
             self._draw_hud(img, self._hud.split('\n'))

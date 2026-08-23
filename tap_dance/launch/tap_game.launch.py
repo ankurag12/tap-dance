@@ -115,6 +115,8 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             parameters=[{
                 'gamma': float(arg('gamma')),
+                'contrast': float(arg('contrast')),
+                'saturation': float(arg('saturation')),
                 'rate': float(arg('overlay_rate')),
             }],
         ))
@@ -164,9 +166,19 @@ def generate_launch_description():
                         'camera frame and publish /game/overlay for viewing in '
                         'Foxglove. Costs CPU; set false if it is tight.'),
         DeclareLaunchArgument(
-            'gamma', default_value='2.2',
-            description='Display-only brightening for the overlay. The detector '
-                        'still sees the original short-exposure frame.'),
+            'gamma', default_value='1.8',
+            description='Overlay brightness lift. Display-only: the detector still '
+                        'sees the original short-exposure frame.'),
+        DeclareLaunchArgument(
+            'contrast', default_value='2.0',
+            description='Overlay local contrast (CLAHE clip limit); 0 disables. '
+                        'Gamma alone looks washed out because it flattens the tone '
+                        'curve; this is what restores punch.'),
+        DeclareLaunchArgument(
+            'saturation', default_value='1.4',
+            description='Overlay chroma scale about neutral; 1.0 leaves colour '
+                        'alone. A short exposure lands in the low-saturation part '
+                        "of the sensor's response."),
         DeclareLaunchArgument(
             'overlay_rate', default_value='10.0',
             description='Overlay publish rate (Hz). Python/cv2, so keep it low.'),
