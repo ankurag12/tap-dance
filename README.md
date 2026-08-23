@@ -137,33 +137,33 @@ each message is a game event and a loss means the hit does not register.
 | Tag detection in motion — 4 ms, dim room | 50–70% |
 | **Tag detection in motion — 2 ms, lit room** | **~100%** (colour or IR) |
 | Tap → score latency | ~75 ms, from ~330 ms |
-| **Game result** | **10/10 hits, 0 unlocalizable, median reaction 868 ms** |
+| **Game, hand-configured targets** | **10/10 hits, median reaction 868 ms** |
+| **Game, YOLO-discovered targets** | **8/10 hits, median reaction 1203 ms** |
 
 ## Status
 
-Working end to end: 10/10 hits with no unlocalizable taps and a median reaction
-time of 868 ms. Getting there took four measured fixes -- cutting a needless
-300 ms wait in the tap lookup, loosening the staleness bound once it was clear
-only horizontal position mattered, adding a game-level lockout so a tap's
-follow-through stopped scoring the next round, and moving AprilTag to the IR
-imager with a pinned exposure.
+Working end to end, both ways of choosing targets: 10/10 hits at a median 868 ms
+with hand-measured positions, 8/10 at 1203 ms with three objects discovered by
+YOLOv8.
 
-The tag-visibility problem is solved: detection in motion went from
-~50% to 100% by moving AprilTag onto the D456's global-shutter IR imager with a
-pinned 4 ms exposure. Two effects were masking each other — a rolling shutter
-shears a moving tag (which exposure cannot fix), while IR auto-exposure picks a
-long, blurring exposure because ambient near-IR is dim with the projector off.
+Four measured fixes got it there. Pinning the camera exposure to 2 ms took tag
+detection during the reach from ~50% to ~100% — auto-exposure optimises brightness
+and picks a long exposure that blurs the tag exactly when it matters. Cutting a
+needless 300 ms wait in the tap lookup dropped tap-to-score latency from ~330 ms to
+~50 ms. Loosening the staleness bound stopped good taps being discarded, once it was
+clear only horizontal position mattered. And a game-level lockout stopped a tap's
+follow-through scoring the next round.
 
-That last point is also the configuration's main constraint: the projector has to
-stay off, so the IR imagers run passive and need an actual near-IR source.
-Daylight through a window is enough; LED room lighting is not, and an IR
-illuminator or a halogen lamp would be the fix for evening use.
+The one operating condition to know: a 2 ms exposure needs a well-lit room. In poor
+light the image underexposes and detection falls — the fixes being more light, a
+longer exposure, or the global-shutter IR imager (`sensor:=infra1`), which needs a
+near-IR source of its own.
 
-YOLOv8 target detection is wired in (`use_yolo:=true`): the TensorRT engine runs
-in the same container on the same rectified image AprilTag uses, so bbox centres
-and tag centres are directly comparable — no depth, no intrinsics, no cross-sensor
-registration. Objects are accepted as targets after a stability threshold so a
-single false positive cannot inject one mid-game.
+YOLOv8 target detection (`use_yolo:=true`) runs its TensorRT engine in the same
+container on the same rectified image AprilTag uses, so bbox centres and tag centres
+are directly comparable — no depth, no intrinsics, no cross-sensor registration. A
+class must be detected repeatedly before it becomes a target, so one false positive
+cannot inject one mid-game.
 
-Scope and milestones: [`docs/capstone-tap-game.md`](docs/capstone-tap-game.md).
+Why it is built this way, and what the measurements said: [`docs/design.md`](docs/design.md).
 Every command for running and debugging: [`docs/runbook.md`](docs/runbook.md).

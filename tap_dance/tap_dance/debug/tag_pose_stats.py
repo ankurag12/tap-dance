@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Quantify AprilTag pose jitter — the M0 baseline for the pointing capstone.
+# Quantify AprilTag pose jitter: how steady is the reported pose when the tag
+# is held still? Establishes the accuracy floor everything downstream inherits.
 #
 # Pointing error at range IS orientation error, so "the pose looks wobbly in
 # Foxglove" has to become a number before any fusion can be said to improve it.

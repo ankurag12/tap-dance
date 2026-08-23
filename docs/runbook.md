@@ -299,4 +299,5 @@ ros2 run topic_tools throttle messages /image_rect 5.0 /image_slow
 | `endPacket(): could not send data: 12` on the M5Stick | ENOMEM: publishing faster than WiFi drains. Why the IMU stream is decimated to 100 Hz |
 | Taps never localize, `no detections at all` | Tag not in view, or the pose buffer is empty — check `tag ids seen` in the status line |
 | `GXF_OUT_OF_MEMORY` at rectify | 1080p OOMs the 8 GB unified memory; stay at 720p |
+| OOM, or two cameras fighting | `tap_game.launch.py` already includes the perception graph — running `realsense_apriltag.launch.py` as well starts a second camera, rectify and TensorRT engine. Recover with `pkill -f component_container_mt`, `pkill -f realsense`, and on the host `sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'`; replug the D456 if it will not reopen |
 | Git fails inside the container | Do git on the **host**; the workspace is bind-mounted so both see the same files |
