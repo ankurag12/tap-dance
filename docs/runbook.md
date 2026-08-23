@@ -57,9 +57,55 @@ ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 use_yolo:=true \
   yolo_classes:='["cup","bottle","book"]'
 ```
 
-This starts the camera, AprilTag, optionally YOLOv8/TensorRT, `tap_localizer` and
-`tap_game`. The camera and NITROS are logged at WARN so the prompts stay readable;
-add `quiet:=false` when debugging bring-up.
+This starts the camera, AprilTag, optionally YOLOv8/TensorRT, `tap_localizer`,
+`tap_game` and the on-screen display. The camera and NITROS are logged at WARN and
+the game logs prompts and results only; add `quiet:=false` or `verbose:=true` when
+debugging.
+
+### Watching it, and recording a demo
+
+The Jetson is headless, so the display is an image topic: **`/game/overlay`** — the
+camera frame graded for viewing with the prompt, outcome and score drawn on. Open it
+in a Foxglove Image panel. It is already 960 px wide, so use it raw rather than
+looking for a compressed variant.
+
+It carries no detection boxes and no tag marker on purpose: showing them would tell
+the player what the system thinks each object is and where it believes the wand is,
+which is the game. Use `hover_probe` for internals.
+
+Grading is three display-only stages — the detector still sees the original
+short-exposure frame:
+
+| Argument | Default | Effect |
+|---|---|---|
+| `gamma` | 1.8 | global brightness lift |
+| `contrast` | 2.0 | CLAHE clip limit — local contrast. 0 disables |
+| `saturation` | 1.4 | chroma scale about neutral. 1.0 leaves colour alone |
+
+Gamma alone looks washed out because it lifts midtones by flattening the tone curve.
+Measured on a dark synthetic frame: gamma 2.2 alone dropped L standard deviation from
+28.8 to 23.8 and left chroma at 8.9. The three-stage version brightens as much
+(mean L 33.8 → 94.1) while holding contrast at 28.2 and raising chroma to 13.0, with
+no clipped highlights.
+
+```bash
+# punchier
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 \
+  gamma:=2.0 contrast:=3.0 saturation:=1.6
+
+# flat and neutral, if the grading looks overcooked
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 \
+  contrast:=0.0 saturation:=1.0
+
+# skip the overlay if CPU is tight
+ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 use_overlay:=false
+```
+
+Push `contrast` too high and it amplifies sensor noise in flat areas — that is what
+the clip limit bounds, and a dark frame has plenty of noise to amplify.
+
+For a screen recording: Foxglove Image panel on `/game/overlay`, `rounds:=6` for a
+~40 s clip, and start recording once `targets from YOLO:` has appeared.
 
 The micro-ROS agent is NOT part of this launch — it is a persistent Docker
 container with its own lifecycle (see §0), since the wand connects to it whenever
@@ -75,7 +121,9 @@ Common overrides:
   min_yolo_hits:=15      # detections before a class becomes a target
   wand_tag_id:=-1        # -1 = whichever tag is in view
   verbose:=true          # log hover changes and rejected taps
-  gamma:=3.0             # brighter overlay (display only)
+  gamma:=2.0             # overlay brightness (display only)
+  contrast:=3.0          # overlay local contrast (CLAHE); 0 disables
+  saturation:=1.6        # overlay chroma boost; 1.0 = off
   overlay_rate:=15.0     # overlay Hz; Python/cv2, keep it low
   use_overlay:=false     # skip the overlay entirely
 ```
