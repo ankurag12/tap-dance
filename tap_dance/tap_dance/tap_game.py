@@ -158,7 +158,19 @@ class TapGame(Node):
         if self._use_yolo:
             self.create_subscription(
                 Detection2DArray, '/detections_output', self._on_detections, qos)
+        # Default output is prompts and results only: the running commentary
+        # (every hover change, every rejected tap) is what made the terminal
+        # unreadable on camera. verbose:=true restores it for debugging.
+        self._verbose = self.declare_parameter('verbose', False).value
+
         self._pub = self.create_publisher(String, '/game/status', 10)
+        # Compact text for on-screen display, kept separate from the log so the
+        # game -- not the renderer -- decides what the player sees. The Jetson is
+        # headless, so game_overlay renders this into an image topic rather than
+        # drawing it in a window. Deliberately carries NO detection state: showing
+        # the boxes or the tracked tag would tell the player what the system
+        # thinks, which is the game.
+        self._pub_hud = self.create_publisher(String, '/game/hud', 10)
 
         self._round = 0
         self._target = None
@@ -202,11 +214,28 @@ class TapGame(Node):
         self.get_logger().info(text)
         self._pub.publish(String(data=text))
 
-    def _say_throttled(self, text, period):
+    def _chatter(self, text):
+        """Running commentary: logged only when verbose, still published so any
+        subscriber can see it."""
+        if self._verbose:
+            self.get_logger().info(text)
+        self._pub.publish(String(data=text))
+
+    def _hud(self, headline, detail=''):
+        hits = sum(1 for r in self._results if r[1] == 'HIT')
+        done = len(self._results)
+        lines = [headline]
+        if detail:
+            lines.append(detail)
+        lines.append(f'round {min(self._round, self._rounds)}/{self._rounds}'
+                     + (f'    hits {hits}/{done}' if done else ''))
+        self._pub_hud.publish(String(data='\n'.join(lines)))
+
+    def _chatter_throttled(self, text, period):
         now = self._now()
         if now - getattr(self, '_last_throttled_t', 0.0) >= period:
             self._last_throttled_t = now
-            self._say(text)
+            self._chatter(text)
 
     def _match(self, u):
         return self._ts.match(u)
@@ -240,7 +269,7 @@ class TapGame(Node):
                 region += '  <-- ON TARGET, tap now'
         if region != self._hover:
             self._hover = region
-            self._say(f'   wand over: {region}')
+            self._chatter(f'   wand over: {region}')
             # First arrival on target: split the round into move time and dwell
             # time, so a slow score can be attributed to the player moving or to
             # the player hesitating/waiting for feedback.
@@ -256,18 +285,18 @@ class TapGame(Node):
 
         # A tap stamped before the prompt cannot be a response to it.
         if tap_t < self._prompt_t:
-            self._say(f'   (ignoring a tap stamped {(self._prompt_t - tap_t) * 1000:.0f} '
+            self._chatter(f'   (ignoring a tap stamped {(self._prompt_t - tap_t) * 1000:.0f} '
                       'ms before the prompt)')
             return
 
         if self._last_scored_t is not None \
                 and tap_t - self._last_scored_t < self._tap_lockout:
-            self._say(f'   (ignoring a tap {(tap_t - self._last_scored_t) * 1000:.0f} '
+            self._chatter(f'   (ignoring a tap {(tap_t - self._last_scored_t) * 1000:.0f} '
                       'ms after the last scored one — bounce or follow-through)')
             return
 
         if uncertainty > self._max_uncertainty:
-            self._say(f'   (ignoring a tap: position uncertain to '
+            self._chatter(f'   (ignoring a tap: position uncertain to '
                       f'{uncertainty:.0f} px — beyond any usable bound)')
             return
 
@@ -276,7 +305,7 @@ class TapGame(Node):
         # agree, the uncertainty is irrelevant however large it looks.
         hit_region = self._match(u)
         if self._ts.ambiguous(u, uncertainty):
-            self._say(f'   (ignoring a tap: u={u:.0f} +/-{uncertainty:.0f} px spans '
+            self._chatter(f'   (ignoring a tap: u={u:.0f} +/-{uncertainty:.0f} px spans '
                       'more than one target — hold the wand steadier)')
             return
 
@@ -296,14 +325,19 @@ class TapGame(Node):
                 split = ', never seen on target before the tap'
             self._say(f'   HIT  {self._target}  in {reaction * 1000:.0f} ms'
                       f'{split}  (u={u:.0f}, +/-{uncertainty:.0f} px)')
+            self._hud(f'HIT  {self._target.upper()}',
+                      f'{reaction * 1000:.0f} ms')
         elif hit_region is None:
             outcome = 'WRONG'
             self._say(f'   MISS — tapped between targets (u={u:.0f}), '
                       f'wanted {self._target}')
+            self._hud('MISS', f'wanted {self._target.upper()}')
         else:
             outcome = 'WRONG'
             self._say(f'   WRONG — tapped {hit_region} (u={u:.0f}), '
                       f'wanted {self._target}')
+            self._hud(f'WRONG — that was {hit_region.upper()}',
+                      f'wanted {self._target.upper()}')
 
         self._results.append((self._target, outcome, reaction))
         self._last_scored_t = tap_t
@@ -324,7 +358,7 @@ class TapGame(Node):
         if tap_t < self._prompt_t:
             return
         self._unlocated += 1
-        self._say('   TAP SEEN but the camera could not see the tag then — '
+        self._chatter('   TAP SEEN but the camera could not see the tag then — '
                   'angle the wand so the tag faces the camera, and try again')
 
     def _tick(self):
@@ -337,7 +371,7 @@ class TapGame(Node):
             if len(self._ts.targets) < 2:
                 self._countdown_until = now + self._start_delay
                 if self._use_yolo:
-                    self._say_throttled(
+                    self._chatter_throttled(
                         f'still waiting: {len(self._ts.targets)} target(s) found',
                         period=3.0)
                 return
@@ -347,6 +381,7 @@ class TapGame(Node):
         elif self._state == 'waiting':
             if now - self._prompt_t > self._time_limit:
                 self._say(f'   MISS — out of time ({self._time_limit:.0f} s)')
+                self._hud('TOO SLOW', f'wanted {self._target.upper()}')
                 self._results.append((self._target, 'TIMEOUT', None))
                 self._next_round()
 
@@ -376,6 +411,7 @@ class TapGame(Node):
         self._state = 'waiting'
         self._say(f'[{self._round}/{self._rounds}]  TAP THE  >>> '
                   f'{self._target.upper()} <<<')
+        self._hud(f'TAP THE {self._target.upper()}')
 
     def _summary(self):
         hits = [r for r in self._results if r[1] == 'HIT']
@@ -396,6 +432,9 @@ class TapGame(Node):
                          f'worst {times[-1] * 1000:.0f} ms')
         lines += ['=' * 52, '']
         self._say('\n'.join(lines))
+        best = min((r[2] for r in hits), default=None)
+        self._hud(f'{len(hits)}/{len(self._results)} HITS',
+                  f'best {best * 1000:.0f} ms' if best else 'game over')
 
 
 def main(args=None):

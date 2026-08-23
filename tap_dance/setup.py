@@ -35,6 +35,7 @@ setup(
             'tap_detector = tap_dance.debug.tap_detector:main',
             'tap_localizer = tap_dance.tap_localizer:main',
             'tap_game = tap_dance.tap_game:main',
+            'game_overlay = tap_dance.game_overlay:main',
             'hover_probe = tap_dance.debug.hover_probe:main',
         ],
     },

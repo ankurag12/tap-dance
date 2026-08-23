@@ -81,6 +81,7 @@ def launch_setup(context, *args, **kwargs):
 
     game_params = {
         'use_yolo': use_yolo,
+        'verbose': arg('verbose').lower() in ('true', '1', 'yes'),
         'rounds': int(arg('rounds')),
         'time_limit': float(arg('time_limit')),
     }
@@ -102,7 +103,22 @@ def launch_setup(context, *args, **kwargs):
         output='screen', parameters=[game_params],
     )
 
-    return [perception, localizer, game]
+    nodes = [perception, localizer, game]
+
+    # The HUD is rendered into /game/overlay rather than a window, because the
+    # Jetson is headless. It also brightens its own copy of the frame: the exposure
+    # is pinned short to stop the tag blurring, which looks dark to a human, and
+    # compromising the detector for the picture would be the wrong trade.
+    if arg('use_overlay').lower() in ('true', '1', 'yes'):
+        nodes.append(Node(
+            package='tap_dance', executable='game_overlay', name='game_overlay',
+            output='screen',
+            parameters=[{
+                'gamma': float(arg('gamma')),
+                'rate': float(arg('overlay_rate')),
+            }],
+        ))
+    return nodes
 
 
 def generate_launch_description():
@@ -142,6 +158,23 @@ def generate_launch_description():
         DeclareLaunchArgument('min_yolo_hits', default_value='15'),
         DeclareLaunchArgument('rounds', default_value='10'),
         DeclareLaunchArgument('time_limit', default_value='6.0'),
+        DeclareLaunchArgument(
+            'use_overlay', default_value='true',
+            description='Render prompt + score onto a brightened copy of the '
+                        'camera frame and publish /game/overlay for viewing in '
+                        'Foxglove. Costs CPU; set false if it is tight.'),
+        DeclareLaunchArgument(
+            'gamma', default_value='2.2',
+            description='Display-only brightening for the overlay. The detector '
+                        'still sees the original short-exposure frame.'),
+        DeclareLaunchArgument(
+            'overlay_rate', default_value='10.0',
+            description='Overlay publish rate (Hz). Python/cv2, so keep it low.'),
+        DeclareLaunchArgument(
+            'verbose', default_value='false',
+            description='Log the running commentary (hover changes, rejected '
+                        'taps). Off by default so the terminal shows prompts and '
+                        'results only.'),
         DeclareLaunchArgument(
             'quiet', default_value='true',
             description='Suppress camera/NITROS INFO chatter so the game prompts '
