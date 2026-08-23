@@ -109,7 +109,9 @@ class TapGame(Node):
         # cap bound instead, leaving a 335 px dead zone between targets 735 px
         # apart, so taps 16 px outside a region scored as "between targets" even
         # though the intended target was unambiguous.
-        self._max_hw = self.declare_parameter('max_halfwidth', 400.0).value
+        # Only bounds the OUTER edge of the outermost targets; interior
+        # boundaries are midpoints, so adjacent regions touch (no dead band).
+        self._outer = self.declare_parameter('outer_margin', 400.0).value
 
         names = list(self.declare_parameter(
             'target_names', ['left', 'mid_left', 'mid_right', 'right']).value)
@@ -122,7 +124,7 @@ class TapGame(Node):
         # Shared with hover_probe so the debug tool cannot disagree with the game.
         self._ts = TargetSet(
             classes=self._yolo_classes, min_hits=self._min_yolo_hits,
-            smoothing=self._yolo_smoothing, max_halfwidth=self._max_hw,
+            smoothing=self._yolo_smoothing, outer_margin=self._outer,
             scale=self._yolo_scale)
         if not self._use_yolo:
             self._ts.set_static(list(zip(names, [float(u) for u in us])))
@@ -181,10 +183,10 @@ class TapGame(Node):
                       f'bboxes by {self._yolo_scale:.3f} into image pixels  |  '
                       f'rejecting taps uncertain beyond {self._max_uncertainty:.0f} px')
         else:
-            self._say('targets: ' + ',  '.join(
-                f'{n}@{int(u)}+/-{self._ts.tolerance[n]:.0f}' for n, u in self._ts.targets)
-                + f'  |  rejecting taps uncertain beyond {self._max_uncertainty:.0f} px'
-                + f'  |  starting in {self._start_delay:.0f} s')
+            self._say('targets: ' + self._ts.describe()
+                      + f'  |  rejecting taps uncertain beyond '
+                        f'{self._max_uncertainty:.0f} px'
+                      + f'  |  starting in {self._start_delay:.0f} s')
 
     def _on_detections(self, msg):
         """Fold YOLO detections into the shared TargetSet."""

@@ -67,23 +67,29 @@ class TargetSet:
     The set of tappable targets and the rule for matching a tap to one.
 
     Targets are either fixed (measured by hand) or discovered from YOLO. Either
-    way each gets a tolerance: half the distance to its NEAREST NEIGHBOUR, capped
-    by max_halfwidth. A single global halfwidth taken from the tightest pair would
-    make every region as strict as the worst one -- an isolated target 450 px from
-    anything else would still reject a tap 60 px off. The cap exists only so a
-    lone target cannot claim the whole image.
+    way each owns an INTERVAL of columns, and adjacent intervals meet exactly at
+    the midpoint between the two targets, so there is no dead band between them.
+
+    Boundaries are computed PER SIDE. An earlier version gave each target a single
+    symmetric tolerance equal to half the distance to its nearest neighbour, which
+    left gaps whenever spacing was uneven: with targets at 286, 432 and 854, the
+    middle one took its +/-73 from its close left neighbour and so stopped at 505,
+    while the right one began at 643 -- a 138 px band belonging to nobody.
+
+    Only the OUTER edges of the outermost targets are bounded, by outer_margin, so
+    a tap far off to one side is still rejected rather than silently attributed.
     """
 
     def __init__(self, classes=(), min_hits=15, smoothing=0.2,
-                 max_halfwidth=400.0, scale=1.0):
+                 outer_margin=400.0, scale=1.0):
         self._classes = set(classes)
         self._min_hits = min_hits
         self._smoothing = smoothing
-        self._max_hw = max_halfwidth
+        self._outer = outer_margin
         self._scale = scale
         self._seen = {}        # name -> [hits, smoothed_u, best_score]
         self.targets = []      # [(name, u)] sorted by u
-        self.tolerance = {}    # name -> px
+        self.bounds = {}       # name -> (lo, hi) columns owned by this target
 
     # --- construction ----------------------------------------------------
     def set_static(self, targets):
@@ -120,28 +126,33 @@ class TargetSet:
             self._recompute(stable)
             return True
         # Positions still move even when the set does not; keep them current.
-        self._recompute(stable, keep_tolerance=True)
+        self._recompute(stable, keep_bounds=True)
         return False
 
-    def _recompute(self, targets, keep_tolerance=False):
+    def _recompute(self, targets, keep_bounds=False):
         self.targets = sorted(targets, key=lambda t: t[1])
-        if keep_tolerance and self.tolerance:
+        if keep_bounds and self.bounds:
             return
-        self.tolerance = {}
+        self.bounds = {}
+        n = len(self.targets)
         for i, (name, cu) in enumerate(self.targets):
-            others = [abs(cu - ou) for j, (_, ou) in enumerate(self.targets) if j != i]
-            self.tolerance[name] = min(
-                self._max_hw, (min(others) / 2.0) if others else self._max_hw)
+            # Halfway to each neighbour; outer_margin only where there is none.
+            lo = ((self.targets[i - 1][1] + cu) / 2.0) if i > 0 else cu - self._outer
+            hi = ((self.targets[i + 1][1] + cu) / 2.0) if i < n - 1 else cu + self._outer
+            self.bounds[name] = (lo, hi)
 
     # --- queries ---------------------------------------------------------
     def match(self, u):
-        """Nearest target whose own tolerance contains u, or None."""
-        best, best_d = None, float('inf')
-        for name, cu in self.targets:
-            d = abs(u - cu)
-            if d <= self.tolerance[name] and d < best_d:
-                best, best_d = name, d
-        return best
+        """The target owning column u, or None if u is outside every interval.
+
+        Intervals are disjoint and adjacent ones touch, so at most one matches --
+        no nearest-neighbour tie-breaking needed.
+        """
+        for name, _ in self.targets:
+            lo, hi = self.bounds[name]
+            if lo <= u <= hi:
+                return name
+        return None
 
     def ambiguous(self, u, uncertainty):
         """
@@ -163,5 +174,6 @@ class TargetSet:
         return entry[2] if entry else 0.0
 
     def describe(self):
-        return ',  '.join(f'{n}@{int(u)}+/-{self.tolerance[n]:.0f}'
-                          for n, u in self.targets)
+        return ',  '.join(
+            f'{n}@{int(u)}[{int(self.bounds[n][0])}..{int(self.bounds[n][1])}]'
+            for n, u in self.targets)

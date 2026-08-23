@@ -61,7 +61,7 @@ class HoverProbe(Node):
             classes=classes,
             min_hits=self.declare_parameter('min_yolo_hits', 15).value,
             smoothing=self.declare_parameter('yolo_smoothing', 0.2).value,
-            max_halfwidth=self.declare_parameter('max_halfwidth', 400.0).value,
+            outer_margin=self.declare_parameter('outer_margin', 400.0).value,
             scale=self._scale)
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -99,13 +99,15 @@ class HoverProbe(Node):
 
         if self._targets.targets:
             lines.append('  objects (only classes that can become targets):')
-            lines.append('      name              u(img)   u(net)  tol +/-   hits  score')
+            lines.append('      name              u(img)   u(net)      owns cols'
+                         '   hits  score')
             for name, u in self._targets.targets:
                 raw = self._raw.get(name)
+                lo, hi = self._targets.bounds[name]
                 lines.append(
                     f'      {name:<16} {u:7.1f}  '
                     f'{("%7.1f" % raw) if raw is not None else "      -"}  '
-                    f'{self._targets.tolerance[name]:7.0f}  '
+                    f'{lo:6.0f}..{hi:-6.0f}  '
                     f'{self._targets.hits(name):5d}  {self._targets.score(name):.2f}')
         else:
             waiting = sorted(self._raw)
@@ -131,7 +133,7 @@ class HoverProbe(Node):
                 if self._targets.targets:
                     gaps = '   '.join(
                         f'{n}:{u - cu:+.0f}'
-                        f'{"" if abs(u - cu) <= self._targets.tolerance[n] else "(out)"}'
+                        f'{"" if self._targets.match(u) == n else "(out)"}'
                         for n, cu in self._targets.targets)
                     lines.append(f'       offsets  {gaps}')
 
