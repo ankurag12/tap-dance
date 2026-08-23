@@ -29,12 +29,13 @@ setup(
     entry_points={
         'console_scripts': [
             'sensor_monitor = tap_dance.sensor_monitor:main',
-            'detection_probe = tap_dance.detection_probe:main',
-            'tag_pose_stats = tap_dance.tag_pose_stats:main',
-            'object_locator = tap_dance.object_locator:main',
-            'tap_detector = tap_dance.tap_detector:main',
+            'detection_probe = tap_dance.debug.detection_probe:main',
+            'tag_pose_stats = tap_dance.debug.tag_pose_stats:main',
+            'object_locator = tap_dance.debug.object_locator:main',
+            'tap_detector = tap_dance.debug.tap_detector:main',
             'tap_localizer = tap_dance.tap_localizer:main',
             'tap_game = tap_dance.tap_game:main',
+            'hover_probe = tap_dance.debug.hover_probe:main',
         ],
     },
 )

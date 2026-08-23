@@ -80,10 +80,12 @@ Deeper per-node parameters (`tap_lockout`, `max_halfwidth`, `max_uncertainty`,
 `max_stale`, `fresh_enough`) are not exposed by the launch; run the node directly
 with `ros2 run` to change them.
 
-## 2. Measure (standalone debugging tools)
+## 2. Debug tools
 
-These are for answering questions, not for playing. Run them against a running
-`tap_game.launch.py`, or start the perception graph alone with:
+Source lives in `tap_dance/tap_dance/debug/`; each is still a normal
+`ros2 run tap_dance <name>` executable. They answer questions rather than playing.
+Run them against a running `tap_game.launch.py`, or start the perception graph
+alone with:
 
 ```bash
 ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225

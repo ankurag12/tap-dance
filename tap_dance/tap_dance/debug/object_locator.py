@@ -39,7 +39,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from vision_msgs.msg import (BoundingBox3D, Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
-from tap_dance.detection_probe import class_name
+from tap_dance.targets import class_name
 
 
 class ObjectLocator(Node):
