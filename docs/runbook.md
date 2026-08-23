@@ -92,6 +92,31 @@ ros2 launch tap_dance realsense_apriltag.launch.py tag_size:=0.1225
 ```
 
 
+**Where is the tag, and which object is it over?** The one to reach for when the
+game says the wrong thing. Uses the same matching code as the game, so it cannot
+disagree with it.
+
+```bash
+ros2 run tap_dance hover_probe --ros-args \
+  -p yolo_classes:='["cup","banana","apple"]' -p wand_tag_id:=1 -p period:=1.0
+```
+
+```
+  objects (only classes that can become targets):
+      name              u(img)   u(net)  tol +/-   hits  score
+      apple              286.0    143.0       73    120  0.71
+      banana             432.0    216.0       73    118  0.66
+      cup                854.0    427.0      211    140  0.83
+  tag: u=  290.4 v=  241.0  ->  OVER APPLE
+       offsets  apple:+4   banana:-142(out)   cup:-564(out)
+```
+
+`u(img)` vs `u(net)` are both shown because a wrong scale is otherwise invisible —
+it just looks like the tag being over the wrong object. `tol` is half the distance
+to that target's nearest neighbour, so objects placed close together get narrow
+regions. `offsets` distinguishes a near-miss (nudge an object) from being nowhere
+near (re-measure).
+
 **Tag detection rate and pose latency** — the `wand tag found N%` line is the key
 health number. 100% in motion with the default IR + 4 ms config; drop to colour or
 to auto-exposure and it falls to 38–70%.

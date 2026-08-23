@@ -46,15 +46,28 @@ across two clock domains.
 
 ## Nodes
 
+Runtime — `tap_dance/`:
+
 | Node | Role |
 |---|---|
 | `tap_localizer` | Cross-clock lookup: interpolates the tag's pixel position to the tap instant |
-| `tap_game` | Round loop, region matching, reaction-time scoring |
-| `tag_pose_stats` | Measures AprilTag pose jitter — the accuracy baseline |
-| `tap_detector` | Characterizes the tap signal; detection itself runs on-device |
-| `detection_probe` | Readable view of YOLOv8 detections |
-| `object_locator` | YOLO boxes + depth → 3D object positions |
+| `tap_game` | Round loop, target matching, reaction-time scoring |
+| `targets` | Shared library: YOLO→image scaling, target discovery, tolerances, matching |
 | `sensor_monitor` | `diagnostic_updater` health checks on camera + IMU topics |
+
+Debug tools — `tap_dance/debug/`:
+
+| Tool | Answers |
+|---|---|
+| `hover_probe` | Where is the tag, which object is it over, what tolerance does each get? |
+| `tag_pose_stats` | How much does the tag's pose jitter? |
+| `tap_detector` | Do taps separate from swings, and at what threshold? |
+| `detection_probe` | What is YOLO seeing, across all 80 COCO classes? |
+| `object_locator` | YOLO boxes + depth → 3D positions (unused by the game) |
+
+`targets.py` sits in the runtime package even though the debug tools use it:
+dependencies point from `debug/` toward the runtime, never the reverse, so
+`hover_probe` cannot disagree with the game about which object a position matches.
 
 ## Run it
 
