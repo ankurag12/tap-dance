@@ -74,7 +74,7 @@ static char tap_frame_id[] = "wand_tap";
 // firmware prints every onset and peak over serial, so tune against real numbers
 // rather than guessing, and re-measure with `ros2 run tap_dance tap_detector` if
 // the wand or the objects change.
-static const float TAP_THRESHOLD = 60.0f;            // m/s^2
+static const float TAP_THRESHOLD = 50.0f;            // m/s^2
 
 // One physical tap rings across several samples. The lockout collapses those
 // into one event; it also sets the fastest resolvable multi-tap, so it must
