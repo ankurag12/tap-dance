@@ -84,17 +84,21 @@ short-exposure frame:
 Push `contrast` too high and it amplifies sensor noise. More room light is the better
 trade — it buys a short exposure *and* a clean picture.
 
-The overlay reads the camera's **compressed** stream by default. That is not cosmetic:
-a Python node receiving raw 720p at full rate starved the perception pipeline (camera
-throughput fell from ~30 Hz to 13–18 Hz), and the longer frame gaps left tag poses
-stale at the tap instant, so real taps were rejected as positionally ambiguous and had
-to be repeated. If frame rate still looks low, check it with:
+The overlay reads the camera's **compressed** stream by default — cheap to receive,
+and the display never needed the rectified image. Confirm the topic name if it warns
+that no frames are arriving:
 
 ```bash
-ros2 run tap_dance tap_localizer --ros-args -p status_period:=1.0   # expect ~30 Hz
+ros2 topic list | grep compressed
+```
+```bash
+ros2 launch tap_dance tap_game.launch.py ... overlay_image_topic:=<name>
 ```
 
-and drop `overlay_rate:=5.0` or `use_overlay:=false`.
+The colour stream on this D456 delivers ~20 Hz rather than 30, jittery, over USB.
+That is pre-existing and not caused by the overlay. It means tag poses can be
+100–400 ms old at the tap instant, which is why the localizer extrapolates rather
+than using the last sighting directly.
 
 ---
 

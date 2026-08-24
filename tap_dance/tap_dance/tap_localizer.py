@@ -40,6 +40,23 @@
 
 from collections import deque
 
+
+def _solve3(A, b):
+    """Gaussian elimination on a 3x3 system; None if singular."""
+    M = [row[:] + [rhs] for row, rhs in zip(A, b)]
+    for i in range(3):
+        pivot = max(range(i, 3), key=lambda r: abs(M[r][i]))
+        if abs(M[pivot][i]) < 1e-12:
+            return None
+        M[i], M[pivot] = M[pivot], M[i]
+        for r in range(3):
+            if r == i:
+                continue
+            f = M[r][i] / M[i][i]
+            for c in range(i, 4):
+                M[r][c] -= f * M[i][c]
+    return [M[i][3] / M[i][i] for i in range(3)]
+
 import rclpy
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
@@ -88,6 +105,11 @@ class TapLocalizer(Node):
         # of accuracy -- not worth 300 ms of feedback latency in a reaction-time
         # game. Waiting still happens when the last pose is older than this.
         self._fresh_enough = self.declare_parameter('fresh_enough', 0.06).value
+        # How many recent poses the extrapolation fits. 4 is enough to see
+        # deceleration without reaching back into a different phase of the motion.
+        self._fit_poses = self.declare_parameter('fit_poses', 4).value
+        # Fraction of the extrapolated distance charged as uncertainty.
+        self._reach_penalty = self.declare_parameter('reach_penalty', 0.4).value
 
         # 30 Hz * buffer_seconds, with headroom.
         self._poses = deque(maxlen=int(60 * buffer_seconds))
@@ -268,17 +290,65 @@ class TapLocalizer(Node):
         hdr.frame_id = 'unlocated'
         self._pub_unlocated.publish(hdr)
 
-    def _h_speed(self, sample):
-        """Horizontal pixel speed just before `sample`, to sanity-check the
-        'u is unchanged' assumption the fallback relies on."""
-        prev = None
-        for s in self._poses:
-            if s[0] >= sample[0]:
-                break
-            prev = s
-        if prev is None or sample[0] == prev[0]:
-            return None
-        return abs(sample[1] - prev[1]) / (sample[0] - prev[0])   # px/s
+    def _extrapolate(self, sample, tap_t):
+        """
+        Estimate u at the tap, and how much to trust it, from the last few poses.
+
+        Returns (u_at_tap, uncertainty_px).
+
+        A constant-velocity extrapolation of the last inter-frame speed is
+        systematically PESSIMISTIC here, because the wand decelerates into a tap:
+        with a 136 ms-old pose at 542 px/s it predicted 74 px of movement when the
+        wand had nearly stopped, and the game then rejected a perfectly good tap as
+        positionally ambiguous.
+
+        So fit a quadratic to the last few poses, which can represent that
+        deceleration, and take the uncertainty as the DISAGREEMENT between that fit
+        and the naive constant-velocity guess. When both models agree the position
+        is trustworthy however long the gap; when they diverge it genuinely is not.
+        """
+        recent = [x for x in self._poses if x[0] <= sample[0]][-self._fit_poses:]
+        t0 = sample[0]
+        if len(recent) < 2:
+            return sample[1], 0.0
+
+        ts = [x[0] - t0 for x in recent]
+        us = [x[1] for x in recent]
+        dt = tap_t - t0
+
+        # constant velocity from the last pair -- the previous behaviour
+        v_last = (us[-1] - us[-2]) / (ts[-1] - ts[-2]) if ts[-1] != ts[-2] else 0.0
+        u_linear = us[-1] + v_last * dt
+
+        if len(recent) < 3:
+            return us[-1], abs(u_linear - us[-1])
+
+        # least-squares quadratic u(t) = a t^2 + b t + c, solved via normal
+        # equations to avoid a numpy dependency in this node
+        n = len(ts)
+        S = [sum(t ** k for t in ts) for k in range(5)]
+        T = [sum(u * t ** k for u, t in zip(us, ts)) for k in range(3)]
+        A = [[S[4], S[3], S[2]],
+             [S[3], S[2], S[1]],
+             [S[2], S[1], float(n)]]
+        b = [T[2], T[1], T[0]]
+        coef = _solve3(A, b)
+        if coef is None:
+            return us[-1], abs(u_linear - us[-1])
+        a, bb, c = coef
+        u_fit = a * dt * dt + bb * dt + c
+
+        # Uncertainty is the worst of three things:
+        #   * disagreement between the quadratic and constant-velocity models
+        #   * the fit's own residual, so a noisy fit is not reported as certain
+        #   * a fraction of how far we extrapolated -- without this, perfectly
+        #     linear motion reports zero uncertainty even after extrapolating
+        #     100+ px, which is over-confident: the wand is about to hit something
+        #     and stop, and exactly when is not observable from past frames.
+        rms = (sum((a * t * t + bb * t + c - u) ** 2
+                   for t, u in zip(ts, us)) / n) ** 0.5
+        reach = abs(u_fit - us[-1])
+        return u_fit, max(abs(u_fit - u_linear), rms, self._reach_penalty * reach)
 
     def _report_interp(self, tap_t, before, after):
         t0, u0, v0 = before
@@ -309,21 +379,15 @@ class TapLocalizer(Node):
     def _report_last(self, tap_t, before):
         t0, u0, v0 = before
         age_ms = (tap_t - t0) * 1000.0
-        speed = self._h_speed(before)
-        # Horizontal drift over the staleness window is the error this fallback
-        # actually incurs -- if the wand was hovering, it is near zero.
-        drift = f'{speed * (tap_t - t0):.1f} px' if speed is not None else 'n/a'
+        u_est, unc = self._extrapolate(before, tap_t)
 
         self._n_located += 1
         self._n_last += 1
         self.get_logger().info(
-            f'TAP @ {tap_t:.3f} -> u={u0:7.1f}  v={v0:7.1f}  [last]    '
-            f'(pose {age_ms:5.1f} ms old, horiz speed '
-            f'{"n/a" if speed is None else f"{speed:6.0f} px/s"}, '
-            f'implied u drift {drift})   [{self._n_located}/{self._n_taps} located]')
-        # The drift over the staleness window IS the uncertainty here.
-        self._publish(tap_t, u0, v0,
-                      0.0 if speed is None else speed * (tap_t - t0))
+            f'TAP @ {tap_t:.3f} -> u={u_est:7.1f}  v={v0:7.1f}  [extrap]  '
+            f'(pose {age_ms:5.1f} ms old, last seen at u={u0:.0f}, '
+            f'+/-{unc:.0f} px)   [{self._n_located}/{self._n_taps} located]')
+        self._publish(tap_t, u_est, v0, unc)
 
     def _publish(self, tap_t, u, v, u_uncertainty):
         out = PointStamped()

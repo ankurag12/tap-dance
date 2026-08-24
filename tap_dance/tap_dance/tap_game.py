@@ -145,7 +145,10 @@ class TapGame(Node):
         # follow-through or second bounce ~500 ms later is a genuine new event --
         # and since a scored tap immediately advances the round, it was landing
         # as the next round's answer.
-        self._tap_lockout = self.declare_parameter('tap_lockout', 0.40).value
+        # 400 ms was not enough: a follow-through 738 ms after a scored tap cleared
+        # it and was credited to the next round as a WRONG answer. Reaction times
+        # are 1-3 s, so 800 ms cannot block a legitimate answer.
+        self._tap_lockout = self.declare_parameter('tap_lockout', 0.80).value
         self._last_scored_t = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
