@@ -3,12 +3,8 @@
 Whack-a-mole on real objects. The game calls one out — *"tap the CUP"* — you bring a
 tagged wand over it and tap. **The IMU detects when you tapped, the camera detects where.**
 
-## Demo
-
 ![the game running](docs/game_demo.gif)
 
-Three objects on a desk, found and named by YOLOv8. The game calls one out, the wand
-is brought over it and tapped, and the score updates.
 
 ## Hardware
 
