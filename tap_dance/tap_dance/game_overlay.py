@@ -239,7 +239,22 @@ class GameOverlay(Node):
         out.header = self._frame.header
         self._pub.publish(out)
 
+    # cv2.putText uses Hershey fonts, which have no glyphs beyond ASCII: a middle
+    # dot or em dash renders as one '?' PER BYTE, so a UTF-8 "·" came out as "??".
+    # Fold the punctuation we actually use down to ASCII and drop anything else,
+    # rather than leaving it to surface as noise on screen.
+    _ASCII = str.maketrans({
+        '\u2014': '-', '\u2013': '-', '\u00b7': '-', '\u2022': '-',
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u00b1': '+/-', '\u00b0': ' deg', '\u2192': '->',
+    })
+
+    @classmethod
+    def _ascii(cls, text):
+        return text.translate(cls._ASCII).encode('ascii', 'ignore').decode()
+
     def _draw_hud(self, img, lines):
+        lines = [self._ascii(t) for t in lines]
         w = img.shape[1]
         scales = [1.4, 0.9, 0.7][:len(lines)]
         pad, gap = 14, 10

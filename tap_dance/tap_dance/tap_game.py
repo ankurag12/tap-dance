@@ -328,7 +328,7 @@ class TapGame(Node):
             # Not silent: with verbose off the player otherwise gets no feedback at
             # all and just taps again, which is what made a real tap look ignored.
             self._hud(f'TAP THE {self._target.upper()}',
-                      "didn't see the wand clearly — tap again")
+                      "didn't see the wand clearly - tap again")
             return
 
         reaction = tap_t - self._prompt_t
@@ -358,7 +358,7 @@ class TapGame(Node):
             outcome = 'WRONG'
             self._say(f'   WRONG — tapped {hit_region} (u={u:.0f}), '
                       f'wanted {self._target}')
-            self._hud(f'WRONG — that was {hit_region.upper()}',
+            self._hud(f'WRONG - that was {hit_region.upper()}',
                       f'wanted {self._target.upper()}')
 
         self._results.append((self._target, outcome, reaction))
@@ -383,7 +383,7 @@ class TapGame(Node):
         self._chatter('   TAP SEEN but the camera could not see the tag then — '
                   'angle the wand so the tag faces the camera, and try again')
         self._hud(f'TAP THE {self._target.upper()}',
-                  "couldn't see the wand — tap again")
+                  "couldn't see the wand - tap again")
 
     def _tick(self):
         now = self._now()
@@ -478,7 +478,7 @@ class TapGame(Node):
         detail = f'best {best * 1000:.0f} ms' if best else 'game over'
         if self._replay:
             self._done_t = self._now()
-            detail += '  ·  tap to play again'
+            detail += '   -   tap to play again'
             self._say(f'  tap anywhere to play again'
                       + (f' (auto in {self._replay_after:.0f} s)'
                          if self._replay_after > 0 else ''))
