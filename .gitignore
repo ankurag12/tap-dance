@@ -231,3 +231,10 @@ firmware/m5stick_imu/include/secrets.h
 
 # --- macOS ---
 .DS_Store
+
+# --- video: demo recordings are far too big for git. Upload them to a GitHub
+# release or drop them into an issue to get a CDN URL, then link that from the
+# README. A 77 MB .mov committed here is what broke `git push`.
+*.mov
+*.mp4
+*.mkv
