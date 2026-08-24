@@ -82,6 +82,8 @@ def launch_setup(context, *args, **kwargs):
     game_params = {
         'use_yolo': use_yolo,
         'verbose': arg('verbose').lower() in ('true', '1', 'yes'),
+        'replay': arg('replay').lower() in ('true', '1', 'yes'),
+        'replay_after': float(arg('replay_after')),
         'rounds': int(arg('rounds')),
         'time_limit': float(arg('time_limit')),
     }
@@ -161,6 +163,15 @@ def generate_launch_description():
             description='COCO classes that count as targets when use_yolo:=true.'),
         DeclareLaunchArgument('min_yolo_hits', default_value='15'),
         DeclareLaunchArgument('rounds', default_value='10'),
+        DeclareLaunchArgument(
+            'replay', default_value='true',
+            description='After the summary, tap anywhere to play again instead of '
+                        'restarting the launch (which tears down the camera and the '
+                        'TensorRT engine).'),
+        DeclareLaunchArgument(
+            'replay_after', default_value='12.0',
+            description='Also start the next game automatically after this many '
+                        'seconds; 0 waits for a tap only.'),
         DeclareLaunchArgument('time_limit', default_value='6.0'),
         DeclareLaunchArgument(
             'use_overlay', default_value='true',

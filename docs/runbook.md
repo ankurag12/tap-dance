@@ -51,10 +51,16 @@ Measure `target_u` by hovering the wand over each object and reading `tag now at
 from `tap_localizer` (below). Re-measure if you change `sensor:` — the imagers are
 physically offset.
 
+When a game ends it does not exit: **tap anywhere to play again**, or wait 12 s for
+it to start on its own. Restarting the launch instead means tearing down the camera
+and the TensorRT engine and waiting for both to come back.
+
 Common overrides:
 
 ```bash
   rounds:=6              time_limit:=6.0
+  replay_after:=0        # wait for a tap only, no auto-restart
+  replay:=false          # stop after one game
   exposure:=4000         # microseconds; raise in a dim room, at the cost of blur
   min_yolo_hits:=15      # detections before a class becomes a target
   verbose:=true          # log hover changes and rejected taps

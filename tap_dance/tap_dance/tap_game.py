@@ -149,6 +149,12 @@ class TapGame(Node):
         # it and was credited to the next round as a WRONG answer. Reaction times
         # are 1-3 s, so 800 ms cannot block a legitimate answer.
         self._tap_lockout = self.declare_parameter('tap_lockout', 0.80).value
+        # After the summary, play again without restarting the launch -- stopping it
+        # means tearing down the camera and the TensorRT engine and waiting for both
+        # to come back. Tap anywhere to start the next game, or wait for the timeout.
+        self._replay = self.declare_parameter('replay', True).value
+        self._replay_after = self.declare_parameter('replay_after', 12.0).value
+        self._done_t = None
         self._last_scored_t = None
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -280,6 +286,15 @@ class TapGame(Node):
                 self._on_target_t = self._now()
 
     def _on_tap_pixel(self, msg):
+        if self._state == 'done' and self._replay:
+            # Any tap restarts. Position is irrelevant here, so no matching -- but
+            # the lockout still applies, or the final tap of the last game would
+            # immediately start the next one.
+            tap_t = stamp_to_sec(msg.header.stamp)
+            if self._last_scored_t is None \
+                    or tap_t - self._last_scored_t >= self._tap_lockout:
+                self._new_game()
+            return
         if self._state != 'waiting':
             return
 
@@ -387,6 +402,11 @@ class TapGame(Node):
             if now >= self._countdown_until:
                 self._next_round()
 
+        elif self._state == 'done':
+            if self._replay and self._replay_after > 0 and self._done_t \
+                    and now - self._done_t >= self._replay_after:
+                self._new_game()
+
         elif self._state == 'waiting':
             if now - self._prompt_t > self._time_limit:
                 self._say(f'   MISS — out of time ({self._time_limit:.0f} s)')
@@ -422,6 +442,19 @@ class TapGame(Node):
                   f'{self._target.upper()} <<<')
         self._hud(f'TAP THE {self._target.upper()}')
 
+    def _new_game(self):
+        """Reset the score and play again, keeping the targets already found."""
+        self._round = 0
+        self._results = []
+        self._unlocated = 0
+        self._target = None
+        self._last_scored_t = None
+        self._done_t = None
+        self._hover = None
+        self._say('')
+        self._say('--- new game ---')
+        self._next_round()
+
     def _summary(self):
         hits = [r for r in self._results if r[1] == 'HIT']
         wrong = [r for r in self._results if r[1] == 'WRONG']
@@ -442,8 +475,14 @@ class TapGame(Node):
         lines += ['=' * 52, '']
         self._say('\n'.join(lines))
         best = min((r[2] for r in hits), default=None)
-        self._hud(f'{len(hits)}/{len(self._results)} HITS',
-                  f'best {best * 1000:.0f} ms' if best else 'game over')
+        detail = f'best {best * 1000:.0f} ms' if best else 'game over'
+        if self._replay:
+            self._done_t = self._now()
+            detail += '  ·  tap to play again'
+            self._say(f'  tap anywhere to play again'
+                      + (f' (auto in {self._replay_after:.0f} s)'
+                         if self._replay_after > 0 else ''))
+        self._hud(f'{len(hits)}/{len(self._results)} HITS', detail)
 
 
 def main(args=None):
