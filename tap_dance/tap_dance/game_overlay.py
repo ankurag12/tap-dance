@@ -34,9 +34,16 @@
 # -- which is the game. The HUD carries only what a player should see: the prompt,
 # the outcome, and the score. Use hover_probe when you want to see the internals.
 #
-# Runs in Python with cv2, so it is throttled and downscaled: an earlier Isaac ROS
-# Python visualiser on full-rate 720p was unusable. 10 Hz at 960 px wide is ample
-# for a screen recording.
+# SUBSCRIBES TO THE COMPRESSED STREAM, and that is not cosmetic. A Python node
+# receiving raw 720p receives ~2.7 MB per message; at 30 Hz that is ~83 MB/s being
+# deserialised into Python objects, which measurably starved the perception
+# pipeline -- camera throughput fell from ~30 Hz to 13-18 Hz. Longer frame gaps
+# meant staler tag poses at the tap instant, which the game then had to reject as
+# positionally ambiguous, so a real tap did not score and had to be repeated.
+#
+# JPEG is roughly 10x smaller on the wire even on a noisy frame (more on a real
+# scene) and decodes in a few ms, and the display does not need the rectified image
+# at all -- only the detector does. Rendering is still throttled to 10 Hz at 960 px.
 #
 # Usage:
 #   ros2 run tap_dance game_overlay
@@ -48,7 +55,7 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import String
 
 
@@ -57,7 +64,11 @@ class GameOverlay(Node):
     def __init__(self):
         super().__init__('game_overlay')
 
-        image_topic = self.declare_parameter('image_topic', '/image_rect').value
+        # Default is the camera's COMPRESSED colour stream: cheap to receive, and
+        # the display has no use for rectification.
+        image_topic = self.declare_parameter(
+            'image_topic', '/image_raw/compressed').value
+        self._compressed = self.declare_parameter('compressed', True).value
         self._rate = self.declare_parameter('rate', 10.0).value
         self._width = self.declare_parameter('output_width', 960).value
         # >1 brightens midtones without clipping highlights, which is what a
@@ -76,16 +87,23 @@ class GameOverlay(Node):
                                        tileGridSize=(8, 8))
                        if self._clahe_clip > 0 else None)
         self._bridge = CvBridge()
+        self._topic = image_topic
         self._frame = None
         self._hud = ''
         self._lut = self._build_lut(self._gamma)
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.create_subscription(Image, image_topic, self._on_image, qos)
+        if self._compressed:
+            self.create_subscription(CompressedImage, image_topic,
+                                     self._on_image, qos)
+        else:
+            self.create_subscription(Image, image_topic, self._on_image, qos)
         self.create_subscription(String, '/game/hud', self._on_hud, 10)
         self._pub = self.create_publisher(Image, '/game/overlay', 1)
 
         self.create_timer(1.0 / self._rate, self._render)
+        # A wrong topic name is otherwise silent: the node simply renders nothing.
+        self.create_timer(5.0, self._check_input)
         self.get_logger().info(
             f'{image_topic} -> /game/overlay at {self._rate:.0f} Hz, {self._width} '
             f'px wide  |  display grading: gamma {self._gamma:.1f}, contrast '
@@ -118,6 +136,13 @@ class GameOverlay(Node):
                                         0, 255).astype(np.uint8)
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
+    def _check_input(self):
+        if self._frame is None:
+            self.get_logger().warn(
+                f'no frames on {self._topic} — check the topic exists '
+                "(`ros2 topic list | grep image`). For a raw stream pass "
+                'compressed:=false and the uncompressed topic name.')
+
     def _on_image(self, msg):
         # Keep only the newest frame; the render timer decides when to use one, so
         # queuing would just add latency.
@@ -130,7 +155,12 @@ class GameOverlay(Node):
         if self._frame is None:
             return
         try:
-            img = self._bridge.imgmsg_to_cv2(self._frame, desired_encoding='bgr8')
+            if self._compressed:
+                img = self._bridge.compressed_imgmsg_to_cv2(
+                    self._frame, desired_encoding='bgr8')
+            else:
+                img = self._bridge.imgmsg_to_cv2(self._frame,
+                                                 desired_encoding='bgr8')
         except Exception as exc:                                # noqa: BLE001
             self.get_logger().warn(f'cannot convert image: {exc}',
                                    throttle_duration_sec=5.0)

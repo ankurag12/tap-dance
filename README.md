@@ -1,8 +1,7 @@
 # tap-dance
 
 Whack-a-mole on real objects. The game calls one out — *"tap the CUP"* — you bring a
-tagged wand over it and tap. **The IMU says when you tapped, the camera says where the
-wand was, and neither can answer alone.**
+tagged wand over it and tap. **The IMU detects when you tapped, the camera detects where.**
 
 ## Demo
 
@@ -42,12 +41,6 @@ ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 use_yolo:=true \
   yolo_classes:='["cup","banana","apple"]' wand_tag_id:=1
 ```
 
-YOLOv8 finds and names the objects. To skip it and give positions by hand:
-
-```bash
-ros2 launch tap_dance tap_game.launch.py tag_size:=0.1225 \
-  target_names:='["cup","pen"]' target_u:='[600.0, 1000.0]'
-```
 
 Watch **`/game/overlay`** in a Foxglove Image panel — the camera view with the prompt
 and score drawn on. **The room needs to be well lit:** exposure is pinned short to stop

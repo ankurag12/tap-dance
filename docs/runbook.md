@@ -84,6 +84,18 @@ short-exposure frame:
 Push `contrast` too high and it amplifies sensor noise. More room light is the better
 trade — it buys a short exposure *and* a clean picture.
 
+The overlay reads the camera's **compressed** stream by default. That is not cosmetic:
+a Python node receiving raw 720p at full rate starved the perception pipeline (camera
+throughput fell from ~30 Hz to 13–18 Hz), and the longer frame gaps left tag poses
+stale at the tap instant, so real taps were rejected as positionally ambiguous and had
+to be repeated. If frame rate still looks low, check it with:
+
+```bash
+ros2 run tap_dance tap_localizer --ros-args -p status_period:=1.0   # expect ~30 Hz
+```
+
+and drop `overlay_rate:=5.0` or `use_overlay:=false`.
+
 ---
 
 ## Debug tools

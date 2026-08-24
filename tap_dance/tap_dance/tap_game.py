@@ -307,6 +307,10 @@ class TapGame(Node):
         if self._ts.ambiguous(u, uncertainty):
             self._chatter(f'   (ignoring a tap: u={u:.0f} +/-{uncertainty:.0f} px spans '
                       'more than one target — hold the wand steadier)')
+            # Not silent: with verbose off the player otherwise gets no feedback at
+            # all and just taps again, which is what made a real tap look ignored.
+            self._hud(f'TAP THE {self._target.upper()}',
+                      "didn't see the wand clearly — tap again")
             return
 
         reaction = tap_t - self._prompt_t
@@ -360,6 +364,8 @@ class TapGame(Node):
         self._unlocated += 1
         self._chatter('   TAP SEEN but the camera could not see the tag then — '
                   'angle the wand so the tag faces the camera, and try again')
+        self._hud(f'TAP THE {self._target.upper()}',
+                  "couldn't see the wand — tap again")
 
     def _tick(self):
         now = self._now()

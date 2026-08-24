@@ -118,6 +118,8 @@ def launch_setup(context, *args, **kwargs):
                 'contrast': float(arg('contrast')),
                 'saturation': float(arg('saturation')),
                 'rate': float(arg('overlay_rate')),
+                'image_topic': arg('overlay_image_topic'),
+                'compressed': arg('overlay_image_topic').endswith('/compressed'),
             }],
         ))
     return nodes
@@ -179,6 +181,12 @@ def generate_launch_description():
             description='Overlay chroma scale about neutral; 1.0 leaves colour '
                         'alone. A short exposure lands in the low-saturation part '
                         "of the sensor's response."),
+        DeclareLaunchArgument(
+            'overlay_image_topic', default_value='/image_raw/compressed',
+            description='Source for the overlay. Compressed by default: a Python '
+                        'node receiving raw 720p at full rate starved the '
+                        'perception pipeline (30 Hz -> 13-18 Hz), which made tag '
+                        'poses stale at the tap instant.'),
         DeclareLaunchArgument(
             'overlay_rate', default_value='10.0',
             description='Overlay publish rate (Hz). Python/cv2, so keep it low.'),
