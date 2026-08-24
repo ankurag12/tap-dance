@@ -28,6 +28,18 @@
 # Stages 2 and 3 share one BGR->LAB->BGR round trip: CLAHE acts on L while
 # saturation is just a scale on a and b, so there is no separate HSV conversion.
 #
+# WHY THE HUD IS TIME-ALIGNED TO THE FRAME
+# The text and the picture reach the viewer by very different routes. A frame goes
+# capture -> publish -> JPEG -> here -> bridge -> WiFi -> Foxglove, a few hundred
+# milliseconds; the HUD arrives from the game in a few tens. Drawing the newest text
+# onto the frame in hand therefore shows the score BEFORE the recorded picture shows
+# the tap -- which looks like the game jumping the gun, when only the compositing is
+# wrong.
+#
+# So HUD states are kept with the time they arrived, and each frame is drawn with the
+# state that was current at ITS capture time. Text and picture then agree no matter
+# how much delay sits downstream.
+#
 # WHAT IS DELIBERATELY NOT DRAWN
 # No detection boxes, no tracked-tag marker. Showing them would tell the player
 # exactly what the system thinks each object is and where it believes the wand is
@@ -48,6 +60,8 @@
 # Usage:
 #   ros2 run tap_dance game_overlay
 #   ros2 run tap_dance game_overlay --ros-args -p gamma:=2.2 -p rate:=15.0
+
+from collections import deque
 
 import cv2
 import numpy as np
@@ -86,10 +100,18 @@ class GameOverlay(Node):
         self._clahe = (cv2.createCLAHE(clipLimit=self._clahe_clip,
                                        tileGridSize=(8, 8))
                        if self._clahe_clip > 0 else None)
+        # Draw the HUD that was current when the frame was CAPTURED, not the
+        # newest one -- see the note at the top. false gives snappier on-screen
+        # feedback at the cost of text leading the picture.
+        self._sync_hud = self.declare_parameter('sync_hud_to_frame', True).value
+
         self._bridge = CvBridge()
         self._topic = image_topic
         self._frame = None
         self._hud = ''
+        self._hud_log = deque(maxlen=64)   # (arrival_time, text)
+        self._age = None
+        self._age_warned = False
         self._lut = self._build_lut(self._gamma)
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -137,6 +159,12 @@ class GameOverlay(Node):
         return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
     def _check_input(self):
+        if self._frame is not None and self._age is not None:
+            # How far behind reality the displayed picture is, before the bridge and
+            # the network add their own delay. Worth knowing when recording.
+            self.get_logger().info(
+                f'frame age at render: {self._age * 1000:.0f} ms'
+                + ('' if self._sync_hud else '  (HUD not time-aligned)'))
         if self._frame is None:
             self.get_logger().warn(
                 f'no frames on {self._topic} — check the topic exists '
@@ -150,6 +178,37 @@ class GameOverlay(Node):
 
     def _on_hud(self, msg):
         self._hud = msg.data
+        self._hud_log.append((self._now(), msg.data))
+
+    def _now(self):
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def _hud_for_frame(self, header):
+        """The HUD text that was current when this frame was captured."""
+        if not self._sync_hud or not self._hud_log:
+            return self._hud
+
+        stamp = header.stamp.sec + header.stamp.nanosec * 1e-9
+        age = self._now() - stamp
+        # If the camera's stamps are not on this host's clock the age is nonsense,
+        # so fall back rather than showing something arbitrary.
+        if not 0.0 <= age <= 2.0:
+            if not self._age_warned:
+                self._age_warned = True
+                self.get_logger().warn(
+                    f'frame age {age:.2f} s is implausible — camera stamps may not '
+                    'be on the host clock; showing the newest HUD instead')
+            return self._hud
+        self._age = age
+
+        cutoff = self._now() - age
+        text = self._hud_log[0][1]
+        for t, value in self._hud_log:
+            if t <= cutoff:
+                text = value
+            else:
+                break
+        return text
 
     def _render(self):
         if self._frame is None:
@@ -172,8 +231,9 @@ class GameOverlay(Node):
                              interpolation=cv2.INTER_AREA)
         img = self._grade(img)
 
-        if self._hud:
-            self._draw_hud(img, self._hud.split('\n'))
+        hud = self._hud_for_frame(self._frame.header)
+        if hud:
+            self._draw_hud(img, hud.split('\n'))
 
         out = self._bridge.cv2_to_imgmsg(img, encoding='bgr8')
         out.header = self._frame.header

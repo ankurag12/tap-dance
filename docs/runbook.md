@@ -100,6 +100,13 @@ That is pre-existing and not caused by the overlay. It means tag poses can be
 100–400 ms old at the tap instant, which is why the localizer extrapolates rather
 than using the last sighting directly.
 
+**The HUD is time-aligned to the frame.** A picture reaches the viewer a few hundred
+ms after capture, while the HUD arrives in tens, so drawing the newest text onto the
+frame in hand showed the score *before* the recorded picture showed the tap. Each
+frame is instead drawn with the HUD state that was current at its capture time. The
+overlay logs `frame age at render` so you can see how far behind the picture is;
+`sync_hud_to_frame:=false` reverts to snappier but misaligned feedback.
+
 ---
 
 ## Debug tools
